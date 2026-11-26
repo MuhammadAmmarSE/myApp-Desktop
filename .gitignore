@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+release/
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.keystore
+test/e2e/artifacts/
+test/e2e/profile*/
+.DS_Store
+*.tsbuildinfo

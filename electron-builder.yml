@@ -1,0 +1,56 @@
+# Installers: npm run dist:win (NSIS installer + portable .exe), dist:linux (AppImage + .deb),
+# dist:mac (.dmg + .zip, on a Mac). Everything lands in release/.
+appId: app.redline.desktop
+productName: Redline
+copyright: Redline
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+asarUnpack:
+  - resources/**
+# the exe's icon and details are written by scripts/afterPack.js, which needs no Wine
+afterPack: scripts/afterPack.js
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Redline
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-Setup-${version}.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+linux:
+  target: [AppImage, deb]
+  icon: build/icons
+  category: Office
+  synopsis: Your day, to-dos, lists, notes, money and the assistant
+  maintainer: Redline <redline@localhost>
+  executableName: redline
+  desktop:
+    entry:
+      StartupWMClass: Redline
+
+mac:
+  target: [dmg, zip]
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  darkModeSupport: true
