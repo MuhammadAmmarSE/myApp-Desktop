@@ -19,6 +19,7 @@
     "dist": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:win": "npm run build && electron-builder --win",
+    "dist:win:portable": "npm run build && electron-builder --win portable zip",
     "dist:mac": "npm run build && electron-builder --mac"
   },
   "devDependencies": {

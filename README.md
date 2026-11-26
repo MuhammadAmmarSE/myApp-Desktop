@@ -61,14 +61,17 @@ can be changed on the sign-in screen under "Use a different server".
 
 ```bash
 npm run icons        # draws the icons into build/ and resources/ (needs Playwright's Chromium)
-npm run dist:win     # release/Redline-Setup-<version>.exe and Redline-<version>-portable.exe
+npm run dist:win     # on Windows: release/Redline-Setup-<version>.exe and Redline-<version>-portable.exe
+npm run dist:win:portable  # anywhere: the portable .exe and a .zip (no installer)
 npm run dist:linux   # release/Redline-<version>-linux-x86_64.AppImage and the .deb
 npm run dist:mac     # on a Mac: .dmg and .zip
 ```
 
-Windows builds work from Linux with no Wine: `scripts/afterPack.js` writes the exe's icon and
-details. The installers aren't code-signed, so Windows SmartScreen and macOS Gatekeeper ask
-before the first start.
+The Windows installer (Setup .exe) needs Windows or Wine to build; the portable .exe and the .zip
+build anywhere (`scripts/afterPack.js` writes the exe's icon and details without Wine). The
+**Installers** workflow (`.github/workflows/installers.yml`, run it from the Actions tab or push a
+`v*` tag) builds all of them on Windows, macOS and Linux machines and attaches them to the run.
+Nothing is code-signed, so Windows SmartScreen and macOS Gatekeeper ask before the first start.
 
 ## Where things are
 

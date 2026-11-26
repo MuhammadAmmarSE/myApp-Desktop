@@ -1,5 +1,7 @@
-# Installers: npm run dist:win (NSIS installer + portable .exe), dist:linux (AppImage + .deb),
-# dist:mac (.dmg + .zip, on a Mac). Everything lands in release/.
+# Installers: npm run dist:win (NSIS installer + portable .exe; the installer needs Windows or
+# Wine), dist:win:portable (portable .exe + .zip, anywhere), dist:linux (AppImage + .deb),
+# dist:mac (.dmg + .zip, on a Mac). Everything lands in release/. The Installers workflow builds
+# them all on GitHub's machines.
 appId: app.redline.desktop
 productName: Redline
 copyright: Redline
