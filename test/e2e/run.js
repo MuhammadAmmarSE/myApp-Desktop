@@ -189,6 +189,13 @@ async function scenario(name, fn, always = false) {
     const at = new Date(reminder.data.at);
     if (iso(at) !== day(1) || at.getHours() !== 11) throw new Error(`reminder at ${at}`);
     await until("the fuel expense", async () => (await live("money")).find((r) => r.data.amount === 1200 && r.data.category === "Fuel" && r.data.date === day(0)));
+    // the reminder is handed to the main process, which rings it even with the window closed
+    await until("the reminder scheduled", async () => {
+      const f = path.join(dataDir, "reminders.json");
+      if (!fs.existsSync(f)) return false;
+      const alerts = JSON.parse(fs.readFileSync(f, "utf8")).alerts || [];
+      return alerts.some((a) => /Call the bank/.test(`${a.title} ${a.body}`) && a.at === at.getTime());
+    });
   });
 
   await scenario("to-dos: the quick-add line reads the day, time, tag and priority", async () => {
@@ -256,6 +263,7 @@ async function scenario(name, fn, always = false) {
 
   await scenario("notes: write one, it saves itself, and ticking a box in the preview changes the text", async () => {
     await go("/notes");
+    await win.getByTestId("notes").waitFor();
     await win.keyboard.press("n");
     await win.getByTestId("note-title").fill("Holiday list");
     await win.getByTestId("note-body").fill("- [ ] Tickets\n- [ ] Hotel");
@@ -370,6 +378,7 @@ async function scenario(name, fn, always = false) {
   await scenario("assistant: saying no stops the step and the AI is told", async () => {
     if (workdir) fs.writeFileSync(path.join(workdir, "scratch.txt"), "x");
     await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
     await win.keyboard.press("n");
     await win.getByTestId("composer").fill("Tidy it again");
     await win.getByTestId("send").click();
@@ -388,7 +397,7 @@ async function scenario(name, fn, always = false) {
     await win.locator('[data-theme-card="midnight"]').click();
     await until("the accent changes", async () => (await accent()) !== was);
     await win.locator('[data-bg="peaks"]').click();
-    await until("the wallpaper shows", async () => (await win.locator('img[src*="peaks"]').count()) > 0);
+    await until("the wallpaper shows", async () => (await win.locator('[data-wallpaper="peaks"] [style*="url("]').count()) === 2);
     await win.getByRole("button", { name: "110%" }).click();
     await until("zoomed", async () => Math.abs((await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.getTitle().includes("Quick"))?.webContents.getZoomFactor())) - 1.1) < 0.01);
     await win.getByRole("button", { name: "100%" }).click();

@@ -50,7 +50,7 @@ export function Background() {
   }, [backUrl, motion]);
 
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-bg">
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-bg" data-wallpaper={backUrl ? background : background === "aurora" ? "aurora" : "none"}>
       <div className="absolute inset-0" style={{ background: "radial-gradient(120% 80% at 85% -10%, var(--c-bg2), transparent 60%), radial-gradient(90% 70% at -10% 110%, color-mix(in srgb, var(--c-bg2) 60%, transparent), transparent 60%)" }} />
       {background === "aurora" && (
         <div className="aurora" style={{ animationPlayState: motion === "reduced" ? "paused" : "running" }}>
