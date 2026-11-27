@@ -160,6 +160,32 @@ export async function deleteChat(id: number): Promise<void> {
   useOperator.getState().loadRuns();
 }
 
+// Your Claude Code sessions on claude.ai that the assistant can send work to. Anthropic has no way
+// to list them, so you give each one once (its link and a name) and the server keeps the list.
+export interface SavedClaudeSession {
+  id: number;
+  session_id: string;
+  name: string;
+  note: string;
+  url: string;
+  created_at: number;
+  last_sent_at: number | null;
+  last_message: string;
+}
+export const claudeSessionsOn = (st: OperatorStatus | null) => !!st?.features?.includes("claude_sessions");
+export async function listClaudeSessions(): Promise<SavedClaudeSession[]> {
+  return (await orUpdate(api<{ sessions: SavedClaudeSession[] }>("GET", "/operator/claude-sessions"))).sessions;
+}
+export async function saveClaudeSession(input: { session: string; name: string; note?: string }): Promise<SavedClaudeSession> {
+  return (await orUpdate(api<{ session: SavedClaudeSession }>("POST", "/operator/claude-sessions", input))).session;
+}
+export async function editClaudeSession(id: number, patch: { name?: string; note?: string }): Promise<SavedClaudeSession> {
+  return (await orUpdate(api<{ session: SavedClaudeSession }>("PATCH", `/operator/claude-sessions/${id}`, patch))).session;
+}
+export async function forgetClaudeSession(id: number): Promise<void> {
+  await orUpdate(api("DELETE", `/operator/claude-sessions/${id}`));
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const whenActive = (): Promise<void> => Promise.resolve();
 // Keeps the list of waiting questions current while Redline runs (even with the window in the tray,

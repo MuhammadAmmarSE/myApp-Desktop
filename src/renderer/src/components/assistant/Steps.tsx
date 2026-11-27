@@ -5,14 +5,14 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
-import { Bot, Check, ChevronDown, ChevronUp, Copy, FileText, Fingerprint, GitBranch, Globe, KeyRound, Pause, SquareTerminal, X, type LucideIcon } from "lucide-react";
-import { describeStep, type AskItem, type ClaudeSession, type Step } from "@myapp/core";
+import { Bot, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileText, Fingerprint, GitBranch, Globe, KeyRound, Pause, SquareTerminal, X, type LucideIcon } from "lucide-react";
+import { claudeLinkIn, describeStep, type AskItem, type ClaudeSession, type Step } from "@myapp/core";
 import { Button, Input, Spin, Tag, toast } from "@/components/ui";
 import { useOperator } from "@/store/operator";
 import { confirmIdentity } from "@/lib/identity";
 import { bridge } from "@/lib/bridge";
 
-const ICONS: Record<string, LucideIcon> = { run_command: SquareTerminal, read_file: FileText, write_file: FileText, github: GitBranch, set_repo_secret: KeyRound, dns: Globe, claude_task: Bot };
+const ICONS: Record<string, LucideIcon> = { run_command: SquareTerminal, read_file: FileText, write_file: FileText, github: GitBranch, set_repo_secret: KeyRound, dns: Globe, claude_task: Bot, claude_sessions: Bot, claude_save_session: Bot, claude_send: Bot };
 
 export function Code({ text, lines = 8, diff }: { text: string; lines?: number; diff?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -153,8 +153,27 @@ export function StepCard({ step }: { step: Step }) {
       {step.output && <Code text={step.output} />}
       {step.change && step.tool === "write_file" && <Code text={step.change} diff lines={10} />}
       {step.claude && <ClaudeCard s={step.claude} />}
-      {step.status === "failed" && step.summary ? <p className="text-[12px] text-danger">{step.summary}</p> : step.status === "ok" && step.tool !== "run_command" && step.tool !== "claude_task" && step.summary ? <p className="text-[12px] text-text3">{step.summary}</p> : null}
+      {step.status === "failed" && step.summary ? (
+        <p className="text-[12px] text-danger">{step.summary}</p>
+      ) : step.status === "ok" && step.tool === "claude_send" && claudeLinkIn(step.summary) ? (
+        <OpenInClaude url={claudeLinkIn(step.summary)!} />
+      ) : step.status === "ok" && step.tool !== "run_command" && step.tool !== "claude_task" && step.summary ? (
+        <p className="text-[12px] text-text3">{step.summary}</p>
+      ) : null}
     </motion.div>
+  );
+}
+
+// a message sent to one of your Claude sessions: its answer, and anything it asks you to approve,
+// are in the session on claude.ai or the Claude app
+function OpenInClaude({ url }: { url: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="text-[12px] text-text3">{"Delivered. Claude's answer, and anything it asks you to approve, are in the session."}</p>
+      <Button size="xs" variant="secondary" icon={ExternalLink} onClick={() => void bridge.app.openExternal(url)} aria-label="Open the session in Claude">
+        Open in Claude
+      </Button>
+    </div>
   );
 }
 

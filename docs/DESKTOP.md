@@ -45,6 +45,13 @@ main process (Node)                       screens (Chromium, sandboxed)
   `files: [{ name, data }]`; the server saves and reads them (myapp-backend docs/OPERATOR.md →
   Files). A sent one's Save fetches it from `/runs/:id/files/:fileId` and the main process writes
   it where you choose (`bridge.files.saveFile`, a save dialog; the window never touches the disk).
+- **Claude sessions** (`components/assistant/ClaudeSessions.tsx`, Settings → Assistant): your
+  Claude Code sessions on claude.ai, added once (a claude.ai/code link, checked with core's
+  `parseClaudeSession`, and a name), renamed and forgotten (with Undo) through
+  `/api/operator/claude-sessions`; shown when the server's status lists `claude_sessions`. The
+  assistant sends them work by name; a sent step has Open in Claude, which opens the session in
+  your browser through the main process (`bridge.app.openExternal`). Claude's answer and anything
+  it asks you to approve are in the session, not here.
 - **Your records in the assistant**: the server reads its copy of your records to answer and
   never changes one. A look is one quiet line; changes it proposes come as a card
   (`components/assistant/Proposal.tsx`). Save runs `lib/proposals.ts`: cleaned again against this

@@ -215,11 +215,12 @@ export const FEATURES: Feature[] = [
     id: "assistant",
     name: "Assistant",
     status: "built",
-    what: "This assistant: it knows everything kept in the app and how the app works, answers from your records, proposes changes you save with a tap, and does work on your server and accounts (GitHub, Firebase, DNS, Claude Code).",
+    what: "This assistant: it knows everything kept in the app and how the app works, answers from your records, proposes changes you save with a tap, does work on your server and accounts (GitHub, Firebase, DNS), and sends coding work to your Claude Code sessions on claude.ai.",
     where: "Phone: More → Assistant, or hold the capture orb and speak. Computer: Assistant (Ctrl/⌘ 8), or press Alt/⌥ Space in any app and speak.",
     how: [
       "Changes to your records come as a card: Save or Skip each, Save all, Undo right after.",
       "Risky server steps wait for your fingerprint (on the computer your password or Touch ID).",
+      "Claude sessions: give each of your Claude Code sessions on claude.ai once (paste its claude.ai/code link and a name, in Settings → Claude sessions on the phone, Settings → Assistant on the computer, or just paste the link in a chat), then ask it to send one work by name. Claude's answer, and anything it asks you to approve, are in that session on claude.ai or the Claude app; the step has an Open in Claude button.",
       "Chats are kept: star, archive, rename, search, delete. Photos and files (PDF, Word, Excel, PowerPoint, text, anything up to 10 MB, four at a time) can be sent with the paperclip: it reads them, and keeps them on the server for commands. A sent file opens with a tap. Answers to spoken requests are read aloud.",
     ],
     phone: ["/assistant", "/assistant/[id]", "/assistant/chats"],

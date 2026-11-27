@@ -392,6 +392,58 @@ async function scenario(name, fn, always = false) {
     await until("forgotten on the server", async () => !(await live("memory")).some((r) => r.id === m.id));
   });
 
+  await scenario("claude sessions: given once in Settings, sent work by the assistant, opened in Claude", async () => {
+    // links open in the browser through the main process: record them instead (nothing reaches claude.ai)
+    await app.evaluate(({ shell }) => {
+      global.__opened = [];
+      shell.openExternal = async (u) => void global.__opened.push(u);
+    });
+    const opened = () => app.evaluate(() => global.__opened.slice());
+    await go("/settings?section=assistant");
+    const box = win.getByTestId("claude-sessions");
+    await box.waitFor({ timeout: 15000 });
+    await box.getByText("None yet.", { exact: false }).waitFor();
+    await box.getByLabel("The session's link").fill("https://example.com/not-claude");
+    await box.getByText("isn't a Claude session link", { exact: false }).waitFor();
+    if (await box.getByRole("button", { name: "Add session" }).isEnabled()) throw new Error("a link that isn't Claude's can be added");
+    await box.getByLabel("The session's link").fill("https://claude.ai/code/session_01WebsiteAbcd?tab=1");
+    await box.getByText("That's a Claude session.").waitFor();
+    await box.getByLabel("Its name").fill("website");
+    await box.getByLabel("What it works on").fill("the shop's website repo");
+    await box.getByRole("button", { name: "Add session" }).click();
+    const row = box.locator('[data-claude-session="website"]');
+    await row.getByText("nothing sent yet", { exact: false }).waitFor();
+    if (process.env.E2E_SHOTS) await box.screenshot({ path: path.join(OUT, "claude-sessions.png") });
+    const [[saved]] = await db().query("SELECT session_id, note FROM claude_sessions WHERE name = 'website'");
+    if (!saved || saved.session_id !== "session_01WebsiteAbcd" || saved.note !== "the shop's website repo") throw new Error(`saved: ${JSON.stringify(saved)}`);
+    // the assistant sends it work; the step opens the session in Claude
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.keyboard.press("n");
+    await win.getByTestId("composer").fill("Tell my website session to add a contact page");
+    await win.getByTestId("send").click();
+    await win.getByTestId("timeline").getByText("Sent it to your website session", { exact: false }).waitFor({ timeout: 30000 });
+    await win.getByTestId("timeline").getByText("Sent to “website” on Claude").waitFor();
+    await win.getByTestId("timeline").getByRole("button", { name: "Open the session in Claude" }).click();
+    await until("the session opened in the browser", async () => (await opened()).includes("https://claude.ai/code/session_01WebsiteAbcd"));
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "claude-sent.png") });
+    // back in Settings: when it was last sent to, renamed, forgotten and put back
+    await go("/settings?section=assistant");
+    await row.getByText("sent just now", { exact: false }).waitFor({ timeout: 15000 });
+    await row.getByRole("button", { name: "More for website" }).click();
+    await win.getByRole("menuitem", { name: "Rename or change its note" }).click();
+    await box.getByLabel("New name").fill("shop site");
+    await box.getByLabel("New name").press("Enter");
+    const renamed = box.locator('[data-claude-session="shop site"]');
+    await renamed.waitFor();
+    await renamed.getByRole("button", { name: "More for shop site" }).click();
+    await win.getByRole("menuitem", { name: "Forget it here" }).click();
+    await until("forgotten on the server", async () => !(await db().query("SELECT id FROM claude_sessions"))[0].length);
+    await win.getByRole("status").filter({ hasText: "Forgot “shop site”" }).getByRole("button", { name: "Undo" }).click();
+    await renamed.waitFor();
+    await until("back on the server", async () => (await db().query("SELECT id FROM claude_sessions WHERE name = 'shop site'"))[0].length === 1);
+  });
+
   await scenario("settings: the natural voice from the server; a voice picked here reads answers", async () => {
     await go("/settings?section=assistant");
     await win.getByText(/ElevenLabs on your server · 28,800 characters left this month/).waitFor();

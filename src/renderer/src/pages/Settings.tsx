@@ -45,6 +45,7 @@ import {
 import { hush, loadVoices, loadVoiceStatus, speak, useSpeaking, useVoiceServer, type Voice } from "@/lib/speech";
 import { useListen } from "@/lib/listen";
 import { MicButton, MicLevel } from "@/components/assistant/Voice";
+import { ClaudeSessions } from "@/components/assistant/ClaudeSessions";
 import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
 import type { AppInfo, Prefs } from "@shared/ipc";
 import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
@@ -395,7 +396,7 @@ const CONN: { key: "server" | "deepseek" | "elevenlabs" | "github" | "godaddy" |
   { key: "deepseek", label: "DeepSeek", what: "The AI that plans each step" },
   { key: "elevenlabs", label: "ElevenLabs", what: "The voice that reads answers" },
   { key: "github", label: "GitHub", what: "Repos, issues, secrets" },
-  { key: "claude", label: "Claude Code", what: "Coding work in your repos" },
+  { key: "claude", label: "Claude Code", what: "Sends work to your Claude sessions on claude.ai" },
   { key: "firebase", label: "Firebase", what: "Hosting and projects" },
   { key: "godaddy", label: "DNS", what: "Domain records (GoDaddy)" },
 ];
@@ -711,6 +712,7 @@ function AssistantSettings() {
         })}
       </div>
       <p className="mt-4 text-[12.5px] text-text3">Keys for these live only in your server's .env — never in this app. The steps are in docs/OPERATOR.md of myapp-backend.</p>
+      <ClaudeSessions />
     </>
   );
 }

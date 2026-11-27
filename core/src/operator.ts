@@ -212,6 +212,9 @@ const TITLES: Record<string, string> = {
   set_repo_secret: "Repository secret",
   dns: "DNS",
   claude_task: "Claude Code",
+  claude_sessions: "Looked at your Claude sessions",
+  claude_save_session: "Saved a Claude session",
+  claude_send: "Sent to a Claude session",
   find_records: "Looked through your records",
   get_records: "Read your records",
   money_totals: "Added up your money",
@@ -235,7 +238,25 @@ export function describeStep(s: Step): { title: string; code: string; why: strin
   if (s.tool === "get_records" || s.tool === "my_overview") return { title, code: "", why: "" };
   if (s.tool === "app_guide") return { title, code: a.topic ? `"${a.topic}"` : "", why: "" };
   if (s.tool === "propose_changes") return { title, code: "", why: a.why || "" };
-  // a Claude session's card says its own title
+  // a Claude session on the server (older conversations) says its own title
   if (s.tool === "claude_task") return { title, code: s.claude ? "" : a.title || "", why: "" };
+  if (s.tool === "claude_send") return { title: a.session ? `Sent to “${a.session}” on Claude` : title, code: a.message || "", why: "" };
+  if (s.tool === "claude_save_session") return { title, code: [a.name, a.note].filter(Boolean).join(" · "), why: "" };
   return { title, code: "", why: "" };
 }
+
+// Your Claude Code sessions on claude.ai: the session's ID from what you paste (its ID, or its
+// claude.ai/code link, with or without anything after it), or null. The server checks the same.
+const CLAUDE_ID = /^(?:session|cse)_[A-Za-z0-9_-]{4,90}$/;
+export function parseClaudeSession(input: string): string | null {
+  const s = String(input || "").trim();
+  if (!s) return null;
+  if (CLAUDE_ID.test(s)) return s;
+  const m = /^(?:https?:\/\/)?(?:www\.)?claude\.ai\/code\/((?:session|cse)_[A-Za-z0-9_-]{4,90})(?:[/?#].*)?$/i.exec(s);
+  return m ? m[1] : null;
+}
+// the link in a step's result ("Sent to “website”. Its answer shows in the session: https://claude.ai/…")
+export const claudeLinkIn = (text: string | undefined): string | null => {
+  const m = /https:\/\/claude\.ai\/[^\s)]+/.exec(String(text || ""));
+  return m ? m[0] : null;
+};

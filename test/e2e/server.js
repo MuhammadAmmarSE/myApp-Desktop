@@ -1,7 +1,8 @@
 // A Redline server for the desktop tests: the real myapp-backend (from REDLINE_BACKEND_DIR, by
 // default ../myapp-backend) on a test database, with stand-ins for DeepSeek and ElevenLabs, so
 // nothing leaves this machine. It answers Capture with a fixed set of things to save, and the assistant with a
-// short script: a harmless command, then one that needs your yes, then an answer. Anything heard
+// short script: a harmless command, then one that needs your yes, then an answer (or, asked to
+// tell "my website session" something, sends it to that saved Claude session). Anything heard
 // through the (fake) microphone is written down as "Read me something short".
 //   TEST_DB_USER=... TEST_DB_PASSWORD=... node test/e2e/server.js [port] [--seed] [--keep]
 // The test database (its name must contain "test") is emptied every time it starts, unless
@@ -36,6 +37,9 @@ Object.assign(process.env, {
   REDLINE_UPLOADS_DIR: path.join(work, "uploads"),
   REDLINE_PUBLIC_IP: "203.0.113.7",
   ELEVENLABS_API_KEY: "stand-in-eleven-key",
+  // Claude Code's command line: the backend's stand-in (it says a message was delivered)
+  CLAUDE_BIN: path.join(backend, "test", "fixtures", "bin", "claude"),
+  FAKE_CLAUDE_LOG: path.join(work, "claude.log"),
 });
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -54,6 +58,11 @@ function operatorTurn(body) {
   if (/photo/i.test(text) || Array.isArray(first)) return { content: "I can see the photo you sent." };
   // what the fake microphone "said" (the ElevenLabs stand-in writes it down as this)
   if (/read me something short/i.test(text)) return { content: "Here is something short: the kettle is on." };
+  // "tell my website session to …": sends it to the saved Claude session called website
+  if (/website session/i.test(text)) {
+    if (steps === 0) return { tool_calls: [call("claude_send", { session: "website", message: "Add a contact page to the site, then commit and push." })] };
+    return { content: "Sent it to your website session. Claude's answer will be in the session." };
+  }
   // your records: looks up "my brother", then proposes his shoe size and a to-do to save
   if (/brother/i.test(text)) {
     if (steps === 0) return { tool_calls: [call("find_records", { query: "sibling", kinds: ["person"] })] };

@@ -532,4 +532,17 @@ ok("capture: money given to spend, the items bought with it, and more money on a
   assert.ok(c.cleanChange({ op: "create", kind: "money", data: { amount: 100, paid_from: "f1" } }, { today: "2026-11-27", get }).change);
   assert.ok(c.cleanChange({ op: "create", kind: "money", data: { amount: 100, paid_from: "f2" } }, { today: "2026-11-27", get }).error.includes("no fund"));
 });
+ok("operator: Claude sessions on claude.ai", () => {
+  assert.strictEqual(c.parseClaudeSession("https://claude.ai/code/session_01AbCdEf?tab=x"), "session_01AbCdEf");
+  assert.strictEqual(c.parseClaudeSession("claude.ai/code/cse_12345678/"), "cse_12345678");
+  assert.strictEqual(c.parseClaudeSession(" session_01AbCdEf "), "session_01AbCdEf");
+  assert.strictEqual(c.parseClaudeSession("https://example.com/code/session_01AbCdEf"), null);
+  assert.strictEqual(c.parseClaudeSession("session_01; rm -rf /"), null);
+  const sent = c.describeStep({ kind: "step", tool: "claude_send", args: { session: "website", message: "Add a contact page" }, status: "ok" });
+  assert.deepStrictEqual(sent, { title: "Sent to “website” on Claude", code: "Add a contact page", why: "" });
+  assert.strictEqual(c.describeStep({ kind: "step", tool: "claude_save_session", args: { name: "website", note: "o/site" }, status: "ok" }).code, "website · o/site");
+  assert.strictEqual(c.describeStep({ kind: "step", tool: "claude_sessions", args: {}, status: "ok" }).title, "Looked at your Claude sessions");
+  assert.strictEqual(c.claudeLinkIn("Sent to “website”. Its answer shows in the session: https://claude.ai/code/session_01AbCdEf"), "https://claude.ai/code/session_01AbCdEf");
+  assert.strictEqual(c.claudeLinkIn("Saved"), null);
+});
 console.log(`core: ${n} checks passed`);
