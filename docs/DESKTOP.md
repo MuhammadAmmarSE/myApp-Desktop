@@ -37,6 +37,14 @@ main process (Node)                       screens (Chromium, sandboxed)
   needs approval shows in the chat and in a banner on every page; approving calls
   `confirmIdentity()`: Touch ID on a Mac that has it, otherwise your account password, which the
   server checks (`/auth/confirm`). There is no way to approve without it.
+- **Files in the assistant** (`lib/attachments.ts`, `components/assistant/Files.tsx`): the
+  paperclip picks files through the main process (`bridge.files.pickFiles`: any kind, up to 4,
+  10 MB each, 20 MB together; too-big ones are named), and dropping files on the box reads them in
+  the window (pictures still go as photos). They're offered only when the server's
+  `/operator/status` lists `"files"` in `features`. They go with the message as
+  `files: [{ name, data }]`; the server saves and reads them (myapp-backend docs/OPERATOR.md →
+  Files). A sent one's Save fetches it from `/runs/:id/files/:fileId` and the main process writes
+  it where you choose (`bridge.files.saveFile`, a save dialog; the window never touches the disk).
 - **Your records in the assistant**: the server reads its copy of your records to answer and
   never changes one. A look is one quiet line; changes it proposes come as a card
   (`components/assistant/Proposal.tsx`). Save runs `lib/proposals.ts`: cleaned again against this

@@ -220,7 +220,7 @@ export const FEATURES: Feature[] = [
     how: [
       "Changes to your records come as a card: Save or Skip each, Save all, Undo right after.",
       "Risky server steps wait for your fingerprint (on the computer your password or Touch ID).",
-      "Chats are kept: star, archive, rename, search, delete. Photos can be sent. Answers to spoken requests are read aloud.",
+      "Chats are kept: star, archive, rename, search, delete. Photos and files (PDF, Word, Excel, PowerPoint, text, anything up to 10 MB, four at a time) can be sent with the paperclip: it reads them, and keeps them on the server for commands. A sent file opens with a tap. Answers to spoken requests are read aloud.",
     ],
     phone: ["/assistant", "/assistant/[id]", "/assistant/chats"],
     desktop: ["/assistant", "/assistant/:id"],

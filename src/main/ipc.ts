@@ -18,6 +18,8 @@ import { buildTrayMenu } from "./tray";
 let quickContext: QuickContext | null = null;
 const MAX_TEXT_FILE = 50 * 1024 * 1024;
 const MAX_IMAGE = 25 * 1024 * 1024;
+const MAX_SEND_FILE = 10 * 1024 * 1024; // what the server takes, each (20 MB together)
+const MAX_SAVE_FILE = 25 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".heic": "image/heic", ".bmp": "image/bmp" };
 
 const touchIdAvailable = () => {
@@ -205,6 +207,38 @@ export function registerIpc() {
       out.push({ name: path.basename(p), data: `data:${type};base64,${(await fs.promises.readFile(p)).toString("base64")}` });
     }
     return out;
+  });
+
+  // files for the assistant: any kind, each up to 10 MB, together within what's left (`room`)
+  ipcMain.handle(CH.pickFiles, async (e, max: number, room: number) => {
+    const w = winOf(e);
+    const opts: Electron.OpenDialogOptions = { properties: ["openFile", "multiSelections"] };
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
+    if (r.canceled) return { files: [], skipped: [] };
+    const files = [];
+    const skipped: string[] = [];
+    let left = Math.max(0, Number(room) || 0);
+    for (const p of r.filePaths.slice(0, Math.max(1, Math.min(4, Number(max) || 4)))) {
+      const st = await fs.promises.stat(p);
+      if (!st.isFile() || st.size > MAX_SEND_FILE || st.size > left) {
+        skipped.push(path.basename(p));
+        continue;
+      }
+      left -= st.size;
+      files.push({ name: path.basename(p), size: st.size, data: (await fs.promises.readFile(p)).toString("base64") });
+    }
+    return { files, skipped };
+  });
+  // a file the assistant has, saved where the person chooses
+  ipcMain.handle(CH.saveFile, async (e, input: { name: string; data: string }) => {
+    const data = String(input?.data || "");
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data) || (data.length * 3) / 4 > MAX_SAVE_FILE) throw new Error("That file couldn't be saved.");
+    const w = winOf(e);
+    const opts = { defaultPath: path.join(app.getPath("downloads"), path.basename(String(input?.name || "file"))) };
+    const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts);
+    if (r.canceled || !r.filePath) return null;
+    await fs.promises.writeFile(r.filePath, Buffer.from(data, "base64"));
+    return r.filePath;
   });
 
   ipcMain.on(CH.clipboard, (_e, text: string) => clipboard.writeText(String(text ?? "")));

@@ -17,6 +17,7 @@ export interface OperatorStatus {
   approval_minutes: number;
   // elevenlabs: an older server doesn't say
   connections: { server: Connection; deepseek: Connection; elevenlabs?: Connection; github: Connection; godaddy: Connection; claude: Connection; firebase: Connection };
+  features?: string[]; // what the server's assistant takes: "photos", "files" (an older server says nothing)
 }
 export interface Approval {
   id: number;
@@ -39,7 +40,7 @@ export interface Run {
   updated_at: number;
   starred?: boolean;
   archived?: boolean;
-  preview?: { from: "you" | "assistant"; text: string; photos: number } | null;
+  preview?: { from: "you" | "assistant"; text: string; photos: number; files?: string[] } | null;
 }
 export type ChatCounts = { all: number; starred: number; archived: number };
 

@@ -110,6 +110,13 @@ export type Command =
   | { type: "shortcuts" }
   | { type: "create"; drafts: Draft[]; say?: string };
 
+// a file picked to send to the assistant (data: base64)
+export interface PickedFile {
+  name: string;
+  size: number;
+  data: string;
+}
+
 export interface PickedImage {
   name: string;
   data: string; // data URL as read from disk
@@ -161,6 +168,10 @@ export interface Bridge {
     saveText(input: { name: string; text: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null>;
     openText(input: { filters?: { name: string; extensions: string[] }[] }): Promise<{ name: string; text: string } | null>;
     pickImages(max: number): Promise<PickedImage[]>;
+    // files for the assistant: up to `max`, within `room` bytes; too-big ones named in skipped
+    pickFiles(max: number, room: number): Promise<{ files: PickedFile[]; skipped: string[] }>;
+    // a file the assistant has, saved where you choose (data: base64); the path, or null
+    saveFile(input: { name: string; data: string }): Promise<string | null>;
   };
   clipboard: { write(text: string): void; read(): Promise<string> };
   quick: {
@@ -207,6 +218,8 @@ export const CH = {
   saveText: "files:save-text",
   openText: "files:open-text",
   pickImages: "files:pick-images",
+  pickFiles: "files:pick-files",
+  saveFile: "files:save-file",
   clipboard: "clipboard:write",
   clipboardRead: "clipboard:read",
   quickOpen: "quick:open",

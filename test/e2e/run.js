@@ -593,6 +593,44 @@ async function scenario(name, fn, always = false) {
     await until("his shoe size on the server", async () => (await live("person")).find((r) => r.data.name === "Jamie" && (r.data.details || []).some((d) => d.label === "Shoe size" && d.value === "42")));
   });
 
+  await scenario("assistant: a file dropped on the box goes with the message, is read, and saves from the chat", async () => {
+    const NOTE = "Meeting at 5pm with the plumber.\nBring the keys.";
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    // the server says it takes files once its status is in (the connection chips show it)
+    await win.getByRole("button", { name: /Server/ }).first().waitFor({ timeout: 20000 });
+    await win.keyboard.press("n");
+    await win.getByTestId("composer").waitFor();
+    // dropped on the box, the way a file dragged from a folder arrives
+    await win.evaluate((note) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([note], "plumber-notes.txt", { type: "text/plain" }));
+      const box = document.querySelector('[data-testid="composer-box"]');
+      box.dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      box.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }, NOTE);
+    await win.getByTestId("attached-file").getByText("plumber-notes.txt").waitFor();
+    await win.getByTestId("composer").fill("What does this say?");
+    await win.waitForTimeout(900);
+    await win.screenshot({ path: path.join(OUT, "file-attached.png") }).catch(() => {});
+    await win.getByTestId("send").click();
+    await win.getByTestId("timeline").getByText("I read plumber-notes.txt. It says: Meeting at 5pm with the plumber.", { exact: false }).waitFor({ timeout: 30000 });
+    const chip = win.getByTestId("sent-file");
+    await chip.getByText("plumber-notes.txt").waitFor();
+    // the new chat is in the list straight away, not at the list's next check (every 10 s)
+    await win.getByTestId("chat-list").getByText("What does this say?", { exact: true }).waitFor({ timeout: 4000 });
+    await win.waitForTimeout(900);
+    await win.screenshot({ path: path.join(OUT, "file-sent.png") }).catch(() => {});
+    // Save: the save dialog answers with a path here, and the file lands there as it was sent
+    const out = path.join(os.tmpdir(), `redline-e2e-file-${Date.now()}.txt`);
+    await app.evaluate(({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
+    }, out);
+    await chip.getByRole("button", { name: "Save plumber-notes.txt" }).click();
+    await until("saved to disk as sent", async () => fs.existsSync(out) && fs.readFileSync(out, "utf8") === NOTE);
+    fs.rmSync(out, { force: true });
+  });
+
   await scenario("settings: theme, wallpaper, effects and text size apply at once", async () => {
     await go("/settings?section=appearance");
     const accent = () => win.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--c-accent").trim());

@@ -208,6 +208,13 @@ ok("operator: events become messages and step cards", () => {
   assert.strictEqual(items[1].output, "50G free");
   assert.strictEqual(items[1].ask.summary, "Restart nginx?");
   assert.deepStrictEqual(c.pendingAsks(items).map((a) => a.approvalId), [9]);
+  // files sent with a message: named, never anything odd
+  const sent = c.buildTimeline([ev(1, "user", { text: "", files: [{ id: 4, name: "invoice.pdf", kind: "pdf", bytes: 2048, pages: 2 }, null, { id: 0, name: "x" }, { id: 5, name: "a.txt", kind: "text", bytes: "9" }] })], 7);
+  assert.deepStrictEqual(sent[0].files, [
+    { id: 4, name: "invoice.pdf", kind: "pdf", bytes: 2048, pages: 2 },
+    { id: 5, name: "a.txt", kind: "text", bytes: 9, pages: null },
+  ]);
+  assert.deepStrictEqual(items[0].files, [], "no files: an empty list");
 });
 ok("kinds: work and interests are known", () => {
   for (const k of ["project", "client", "work_log", "server", "domain", "interest", "practice", "word", "media", "wish"]) assert.ok(c.isKind(k), k);

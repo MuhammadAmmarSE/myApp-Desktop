@@ -32,6 +32,7 @@ Object.assign(process.env, {
   DEEPSEEK_VISION_MODEL: "vision-model",
   REDLINE_OPERATOR: "on",
   REDLINE_WORKDIR: work,
+  REDLINE_UPLOADS_DIR: path.join(work, "uploads"),
   REDLINE_PUBLIC_IP: "203.0.113.7",
   ELEVENLABS_API_KEY: "stand-in-eleven-key",
 });
@@ -46,6 +47,9 @@ function operatorTurn(body) {
   const steps = msgs.filter((m) => m.role === "assistant").length;
   const first = (msgs.find((m) => m.role === "user") || {}).content;
   const text = Array.isArray(first) ? first.map((p) => p.text || "").join(" ") : String(first || "");
+  // a file: says what's in it (the first line of its text), so the scenario knows it arrived
+  const file = /\[File “([^”]+)”[^\n]*\n"""\n([^\n]*)/.exec(text);
+  if (file) return { content: `I read ${file[1]}. It says: ${file[2]}` };
   if (/photo/i.test(text) || Array.isArray(first)) return { content: "I can see the photo you sent." };
   // your records: looks up "my brother", then proposes his shoe size and a to-do to save
   if (/brother/i.test(text)) {

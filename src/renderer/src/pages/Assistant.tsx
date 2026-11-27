@@ -14,6 +14,7 @@ import { StepCard } from "@/components/assistant/Steps";
 import { LookedUp, ProposalCard, READ_TOOLS } from "@/components/assistant/Proposal";
 import { Reply } from "@/components/assistant/Reply";
 import { Composer } from "@/components/assistant/Composer";
+import { SentFiles } from "@/components/assistant/Files";
 import { availabilityOf, deleteChat, markChat, renameChat, useOperator, type ChatCounts, type Run } from "@/store/operator";
 import { useSettings } from "@/store/settings";
 import { api } from "@/lib/api";
@@ -22,6 +23,7 @@ import { navigate, useQuery } from "@/lib/router";
 import { usePageKeys } from "@/lib/keys";
 import { hush, speak } from "@/lib/speech";
 import type { Photo } from "@/lib/images";
+import type { Attachment } from "@/lib/attachments";
 import { ago } from "@/lib/format";
 import { rise } from "@/theme/motion";
 
@@ -47,6 +49,8 @@ type Filter = "all" | "starred" | "archived";
 const PAGE = 30;
 
 const imagesOf = (photos: Photo[]) => (photos.length ? photos.map((p) => ({ data: p.data, width: p.width, height: p.height })) : undefined);
+const filesOf = (files: Attachment[]) => (files.length ? files.map((f) => ({ name: f.name, data: f.data })) : undefined);
+const timeoutFor = (photos: Photo[], files: Attachment[]) => (files.length ? 180000 : photos.length ? 60000 : 20000);
 
 export default function Assistant({ params }: { params: Record<string, string> }) {
   const runId = params.id ? parseInt(params.id, 10) : null;
@@ -117,6 +121,11 @@ function ChatList({ current }: { current: number | null }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, q, availability]);
+  // a chat just started (or opened from a link) shows in the list at once, not at the next check
+  useEffect(() => {
+    if (availability === "ready" && current != null && !loading && !runs.some((r) => r.id === current)) void load(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
 
   const menu = (r: Run) => [
     { label: "Open", onSelect: () => navigate(`/assistant/${r.id}`) },
@@ -203,7 +212,7 @@ function ChatList({ current }: { current: number | null }) {
                     {live(r.status) && <span className={clsx("h-2 w-2 shrink-0 rounded-full", r.status === "waiting" ? "bg-warn" : "animate-pulse bg-accent")} />}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-text3">
-                    <span className="min-w-0 flex-1 truncate">{r.preview ? `${r.preview.from === "you" ? "You: " : ""}${r.preview.text || (r.preview.photos ? "Photo" : "")}` : st.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{r.preview ? `${r.preview.from === "you" ? "You: " : ""}${r.preview.text || (r.preview.files?.length ? r.preview.files.join(", ") : r.preview.photos ? "Photo" : "")}` : st.label}</span>
                     <span className="shrink-0">{ago(r.updated_at)}</span>
                   </div>
                 </button>
@@ -229,10 +238,10 @@ function Home() {
   const op = useOperator();
   const [sending, setSending] = useState(false);
   const ask = q.get("ask") || undefined;
-  const start = async (text: string, photos: Photo[]) => {
+  const start = async (text: string, photos: Photo[], files: Attachment[]) => {
     setSending(true);
     try {
-      const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), context: requestContext() }, { timeoutMs: photos.length ? 60000 : 20000 });
+      const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), files: filesOf(files), context: requestContext() }, { timeoutMs: timeoutFor(photos, files) });
       useOperator.getState().loadRuns();
       navigate(`/assistant/${r.run.id}`);
       return true;
@@ -262,7 +271,7 @@ function Home() {
         </motion.div>
         <motion.div {...rise(4)} className="mt-3 flex flex-wrap justify-center gap-1.5">
           {IDEAS.map((i) => (
-            <Chip key={i} onClick={() => void start(i, [])}>
+            <Chip key={i} onClick={() => void start(i, [], [])}>
               {i}
             </Chip>
           ))}
@@ -439,10 +448,10 @@ function Conversation({ runId }: { runId: number }) {
     }
   }, [items, muted]);
 
-  const send = async (text: string, photos: Photo[]) => {
+  const send = async (text: string, photos: Photo[], files: Attachment[]) => {
     setSending(true);
     try {
-      const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), context: requestContext() }, { timeoutMs: photos.length ? 60000 : 20000 });
+      const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), files: filesOf(files), context: requestContext() }, { timeoutMs: timeoutFor(photos, files) });
       since.current = events.length ? events[events.length - 1].id : 0;
       setAtEnd(true);
       if (r.steering) toast("Added. It reads it after the current step.");
@@ -549,6 +558,7 @@ function Conversation({ runId }: { runId: number }) {
                 return (
                   <motion.div key={it.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex max-w-[80%] flex-col items-end gap-1.5 self-end" data-user-message>
                     {it.images.length > 0 && <SentPhotos runId={runId} ids={it.images} />}
+                    {it.files?.length > 0 && <SentFiles runId={runId} files={it.files} />}
                     {(it.text || it.whileWorking) && (
                       <div className="selectable rounded-[16px] rounded-br-[6px] accent-grad px-4 py-2.5 text-[14px] text-on-accent shadow-[var(--shadow-glow)]">
                         {it.text && <div className="whitespace-pre-wrap">{it.text}</div>}

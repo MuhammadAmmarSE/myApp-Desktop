@@ -49,6 +49,8 @@ const bridge: Bridge = {
     saveText: (i) => ipcRenderer.invoke(CH.saveText, i),
     openText: (i) => ipcRenderer.invoke(CH.openText, i),
     pickImages: (max) => ipcRenderer.invoke(CH.pickImages, max),
+    pickFiles: (max, room) => ipcRenderer.invoke(CH.pickFiles, max, room),
+    saveFile: (i) => ipcRenderer.invoke(CH.saveFile, i),
   },
   clipboard: { write: (t) => ipcRenderer.send(CH.clipboard, t), read: () => ipcRenderer.invoke(CH.clipboardRead) },
   quick: {

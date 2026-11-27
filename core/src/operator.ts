@@ -60,8 +60,17 @@ export interface Step {
   proposal?: ProposalItem;
   at: number;
 }
+// a file sent with a message, as the timeline names it (where the server keeps it isn't said)
+export type TimelineFile = { id: number; name: string; kind: string; bytes: number; pages: number | null };
+const filesOf = (list: unknown): TimelineFile[] =>
+  Array.isArray(list)
+    ? list
+        .filter((f): f is Record<string, unknown> => !!f && typeof f === "object" && Number((f as Record<string, unknown>).id) > 0)
+        .map((f) => ({ id: Number(f.id), name: String(f.name || "file"), kind: String(f.kind || "other"), bytes: Number(f.bytes) || 0, pages: Number(f.pages) > 0 ? Number(f.pages) : null }))
+    : [];
+
 export type OpItem =
-  | { kind: "user"; id: number; text: string; whileWorking: boolean; images: number[]; at: number }
+  | { kind: "user"; id: number; text: string; whileWorking: boolean; images: number[]; files: TimelineFile[]; at: number }
   | { kind: "say"; id: number; text: string; at: number }
   | { kind: "reply"; id: number; text: string; at: number }
   | { kind: "error"; id: number; text: string; at: number }
@@ -108,7 +117,7 @@ export function buildTimeline(events: OpEvent[], conversationId: number): OpItem
     }
     switch (e.type) {
       case "user":
-        items.push({ kind: "user", id: e.id, text: String(d.text || ""), whileWorking: !!d.while_working, images: Array.isArray(d.images) ? d.images.map(Number).filter(Boolean) : [], at: e.at });
+        items.push({ kind: "user", id: e.id, text: String(d.text || ""), whileWorking: !!d.while_working, images: Array.isArray(d.images) ? d.images.map(Number).filter(Boolean) : [], files: filesOf(d.files), at: e.at });
         break;
       case "say":
         items.push({ kind: "say", id: e.id, text: String(d.text || ""), at: e.at });
