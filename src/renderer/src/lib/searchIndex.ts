@@ -29,6 +29,17 @@ export const GROUP_WORD: Record<Group, string> = {
   thing: "My things",
   car: "Cars",
   car_log: "Car log",
+  // kept in step with the phone; these records sync here but have no page on the desktop yet
+  project: "Projects",
+  client: "Clients",
+  work_log: "Work log",
+  server: "Servers",
+  domain: "Domains",
+  interest: "Interests",
+  practice: "Practice",
+  word: "Words",
+  media: "Games, books & shows",
+  wish: "Wishlist",
 };
 export const GROUP_ORDER: Group[] = ["do", "todo", "item", "note", "clip", "event", "reminder", "date", "person", "money", "thing", "car", "car_log"];
 

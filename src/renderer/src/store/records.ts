@@ -2,14 +2,14 @@
 // the file). Screens read lists by kind; every change is saved locally first, then synced. The same
 // rules as the phone's store: a newer copy from the server wins, an unsent newer edit here stays.
 import { create } from "zustand";
-import type { Kind, KindData, Rec } from "@myapp/core";
+import { KINDS, type Kind, type KindData, type Rec } from "@myapp/core";
 import type { StoredRec } from "@shared/ipc";
 import { bridge } from "@/lib/bridge";
 import { newId } from "@/lib/ids";
 
 export type Stored = Rec & { dirty: 0 | 1 };
 type Lists = { [K in Kind]: Rec<K>[] };
-export const EMPTY_LISTS = (): Lists => ({ todo: [], item: [], note: [], clip: [], person: [], date: [], money: [], event: [], reminder: [], car: [], car_log: [], thing: [] });
+export const EMPTY_LISTS = (): Lists => Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as Lists;
 
 type State = {
   ready: boolean;

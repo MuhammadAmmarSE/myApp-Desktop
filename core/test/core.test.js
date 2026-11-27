@@ -209,4 +209,128 @@ ok("operator: events become messages and step cards", () => {
   assert.strictEqual(items[1].ask.summary, "Restart nginx?");
   assert.deepStrictEqual(c.pendingAsks(items).map((a) => a.approvalId), [9]);
 });
+ok("kinds: work and interests are known", () => {
+  for (const k of ["project", "client", "work_log", "server", "domain", "interest", "practice", "word", "media", "wish"]) assert.ok(c.isKind(k), k);
+  assert.ok(!c.isKind("password"));
+});
+ok("work: week start, minutes in words, project time and money", () => {
+  assert.strictEqual(c.weekStart("2026-11-26"), "2026-11-23"); // Thursday → Monday
+  assert.strictEqual(c.weekStart("2026-11-29"), "2026-11-23"); // Sunday belongs to the week before
+  assert.strictEqual(c.weekStart("2026-11-23"), "2026-11-23");
+  assert.strictEqual(c.minutesInWords(45), "45 min");
+  assert.strictEqual(c.minutesInWords(60), "1 h");
+  assert.strictEqual(c.minutesInWords(150), "2 h 30 min");
+  const logs = [
+    { data: { project_id: "p", type: "time", date: "2026-11-24", minutes: 90 } },
+    { data: { project_id: "p", type: "time", date: "2026-11-20", minutes: 60, billable: false } },
+    { data: { project_id: "p", type: "time", date: "2026-11-25", minutes: 30 } },
+    { data: { project_id: "p", type: "payment", date: "2026-11-25", amount: 50 } },
+    { data: { project_id: "q", type: "time", date: "2026-11-25", minutes: 600 } },
+  ];
+  const s = c.projectStats(logs, "p", "2026-11-26");
+  assert.deepStrictEqual(s, { minutes: 180, billable: 120, thisWeek: 120, paid: 50, last: "2026-11-25" });
+  assert.deepStrictEqual(c.projectOwed({ name: "Site", status: "active", rate: 40, rate_unit: "hour" }, logs, "p"), { worth: 80, paid: 50, owed: 30 });
+  assert.deepStrictEqual(c.projectOwed({ name: "Site", status: "active", rate: 500, rate_unit: "fixed" }, logs, "p"), { worth: 500, paid: 50, owed: 450 });
+  assert.strictEqual(c.projectOwed({ name: "Mine", status: "active" }, logs, "p"), null);
+  assert.strictEqual(c.projectOwed({ name: "Overpaid", status: "active", rate: 10, rate_unit: "hour" }, logs, "p").owed, 0);
+});
+ok("work: renewals due, soonest first, auto-renew and gone left out", () => {
+  const out = c.renewalsDue(
+    {
+      domain: [
+        { id: "a", data: { name: "late.com", expires_on: "2026-11-20" } },
+        { id: "b", data: { name: "soon.com", expires_on: "2026-12-10" } },
+        { id: "c", data: { name: "auto.com", expires_on: "2026-12-01", auto_renew: true } },
+        { id: "d", data: { name: "far.com", expires_on: "2027-06-01" } },
+        { id: "e", data: { name: "gone.com", expires_on: "2026-12-01", gone: true } },
+      ],
+      server: [
+        { id: "s", data: { name: "VPS", renews_on: "2026-11-30" } },
+        { id: "t", data: { name: "Big box", renews_on: "2026-12-20" } },
+      ],
+    },
+    "2026-11-26",
+  );
+  assert.deepStrictEqual(out.map((x) => x.id), ["a", "s", "b"]);
+  assert.strictEqual(out[0].days, -6);
+  assert.strictEqual(c.daysWord(0), "today");
+  assert.strictEqual(c.daysWord(12), "in 12 days");
+  assert.strictEqual(c.daysWord(-3), "3 days ago");
+  const sum = c.workSummary(
+    {
+      project: [{ id: "p", data: { name: "Site", status: "active", rate: 40, rate_unit: "hour" } }, { id: "i", data: { name: "Idea", status: "idea", rate: 1000, rate_unit: "fixed" } }],
+      work_log: [
+        { data: { project_id: "p", type: "time", date: "2026-11-24", minutes: 120 } },
+        { data: { project_id: "p", type: "payment", date: "2026-11-02", amount: 30 } },
+        { data: { project_id: "p", type: "payment", date: "2026-10-30", amount: 10 } },
+      ],
+      server: [{ id: "s", data: { name: "VPS", cost: 12 } }, { id: "g", data: { name: "Old", cost: 99, gone: true } }],
+    },
+    "2026-11-26",
+  );
+  assert.deepStrictEqual(sum, { active: 1, weekMinutes: 120, paidMonth: 30, owed: 40, serverCost: 12 });
+});
+ok("interests: flashcards move up when known, back to the start when not", () => {
+  assert.deepStrictEqual(c.reviewWord({ term: "kitab", meaning: "book" }, true, "2026-11-26"), { box: 1, due: "2026-11-27", right: 1, wrong: 0 });
+  assert.deepStrictEqual(c.reviewWord({ term: "kitab", meaning: "book", box: 3, right: 3 }, true, "2026-11-26"), { box: 4, due: "2026-12-10", right: 4, wrong: 0 });
+  assert.deepStrictEqual(c.reviewWord({ term: "kitab", meaning: "book", box: 5 }, true, "2026-11-26").box, 5);
+  assert.deepStrictEqual(c.reviewWord({ term: "kitab", meaning: "book", box: 4, right: 4 }, false, "2026-11-26"), { box: 0, due: "2026-11-26", right: 4, wrong: 1 });
+  const words = [
+    { id: "a", data: { term: "a", meaning: "", box: 2, due: "2026-11-26", interest_id: "ar" } },
+    { id: "b", data: { term: "b", meaning: "", box: 0, interest_id: "ar" } },
+    { id: "c", data: { term: "c", meaning: "", box: 1, due: "2026-11-20", interest_id: "ar" } },
+    { id: "d", data: { term: "d", meaning: "", box: 3, due: "2026-12-01", interest_id: "ar" } },
+    { id: "e", data: { term: "e", meaning: "", due: "2026-11-01", interest_id: "fr" } },
+  ];
+  assert.deepStrictEqual(c.dueWords(words, "2026-11-26", "ar").map((w) => w.id), ["b", "c", "a"]);
+  assert.strictEqual(c.dueWords(words, "2026-11-26").length, 4);
+  const p = c.wordProgress([{ data: { box: 5 } }, { data: { box: 4 } }, { data: {} }, { data: { box: 9 } }]);
+  assert.deepStrictEqual(p, { total: 4, boxes: [1, 0, 0, 0, 1, 2], known: 3 });
+});
+ok("interests: practice this week, last 7 days, streak", () => {
+  const pr = [
+    { data: { interest_id: "ar", date: "2026-11-26", minutes: 20 } },
+    { data: { interest_id: "ar", date: "2026-11-25", minutes: 15 } },
+    { data: { interest_id: "ar", date: "2026-11-24", minutes: 10 } },
+    { data: { interest_id: "ar", date: "2026-11-22", minutes: 30 } },
+    { data: { interest_id: "gu", date: "2026-11-26", minutes: 60 } },
+  ];
+  assert.strictEqual(c.practiceThisWeek(pr, "2026-11-26", "ar"), 45);
+  assert.strictEqual(c.practiceThisWeek(pr, "2026-11-26"), 105);
+  assert.deepStrictEqual(c.last7Days(pr, "2026-11-26", "ar"), [0, 0, 30, 0, 10, 15, 20]);
+  assert.strictEqual(c.practiceStreak(pr, "2026-11-26", "ar"), 3);
+  assert.strictEqual(c.practiceStreak(pr, "2026-11-27", "ar"), 3, "today not done yet keeps yesterday's streak");
+  assert.strictEqual(c.practiceStreak(pr, "2026-11-28", "ar"), 0);
+});
+ok("money: months, summaries, trend, pace, recurring", () => {
+  assert.strictEqual(c.prevMonth("2026-01"), "2025-12");
+  assert.strictEqual(c.nextMonth("2026-12"), "2027-01");
+  assert.strictEqual(c.endOfMonth("2028-02"), "2028-02-29");
+  assert.strictEqual(c.monthName("2026-11"), "November 2026");
+  assert.strictEqual(c.monthDays("2026-11").length, 30);
+  const recs = [
+    { id: "a", data: { type: "expense", amount: 100, currency: "PKR", category: "Food & dining", date: "2026-11-02" } },
+    { id: "b", data: { type: "expense", amount: 300, currency: "PKR", category: "Fuel", date: "2026-11-10" } },
+    { id: "c", data: { type: "income", amount: 1000, currency: "PKR", category: "Salary", date: "2026-11-01" } },
+    { id: "d", data: { type: "expense", amount: 40, currency: "USD", category: "Food & dining", date: "2026-11-03" } },
+    { id: "e", data: { type: "expense", amount: 200, currency: "PKR", category: "Bills & utilities", date: "2026-10-05", recurring: "monthly" } },
+  ];
+  const s = c.monthSummary(recs, "2026-11", "PKR");
+  assert.deepStrictEqual([s.spent, s.earned, s.net, s.count], [400, 1000, 600, 3], "other currencies aren't added in");
+  assert.deepStrictEqual(s.categories.map((x) => x.category), ["Fuel", "Food & dining"], "biggest first");
+  assert.strictEqual(s.categories[0].share, 0.75);
+  const trend = c.monthlyTrend(recs, "2026-11", "PKR", 3);
+  assert.deepStrictEqual(trend.map((t) => t.month), ["2026-09", "2026-10", "2026-11"]);
+  assert.deepStrictEqual([trend[1].spent, trend[2].spent], [200, 400]);
+  const pace = c.dailyPace(recs, "2026-11-10", "PKR");
+  assert.deepStrictEqual([pace.spent, pace.perDay, pace.projected, pace.daysLeft], [400, 40, 1200, 20]);
+  assert.deepStrictEqual(c.topExpenses(recs, "2026-11", "PKR", 2).map((r) => r.id), ["b", "a"]);
+  assert.strictEqual(c.nextRecurring("2026-01-31", "monthly", "2026-02-01"), "2026-02-28", "a 31st falls on the last day");
+  assert.strictEqual(c.nextRecurring("2026-11-05", "monthly", "2026-11-27"), "2026-12-05");
+  assert.strictEqual(c.nextRecurring("2026-11-05", null, "2026-11-27"), null);
+  assert.deepStrictEqual(c.dueSoon(recs, "2026-11-27", "PKR", 10).map((d) => d.date), ["2026-12-05"]);
+  const cmp = c.monthCompare(recs, "2026-11-10", "PKR");
+  assert.deepStrictEqual([cmp.now, cmp.before], [400, 200], "last month only up to the same day");
+  assert.strictEqual(cmp.change, 1);
+});
 console.log(`core: ${n} checks passed`);

@@ -3,7 +3,30 @@
 // knowing their fields) and lets a new kind ship without a server migration. Each kind's data
 // is typed here, once, for the Android app, the desktop app and the server.
 
-export const KINDS = ["todo", "item", "note", "clip", "person", "date", "money", "event", "reminder", "car", "car_log", "thing"] as const;
+export const KINDS = [
+  "todo",
+  "item",
+  "note",
+  "clip",
+  "person",
+  "date",
+  "money",
+  "event",
+  "reminder",
+  "car",
+  "car_log",
+  "thing",
+  "project",
+  "client",
+  "work_log",
+  "server",
+  "domain",
+  "interest",
+  "practice",
+  "word",
+  "media",
+  "wish",
+] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (k: unknown): k is Kind => typeof k === "string" && (KINDS as readonly string[]).includes(k);
 
@@ -153,6 +176,130 @@ export interface ThingData {
   [k: string]: unknown;
 }
 
+// Work: projects (for a client or your own), the time spent and payments on them, the clients,
+// and the servers and domains they run on. A payment can also be income in Money (money_id).
+// Passwords and keys never go here: a server keeps its address and who you log in as, not how.
+export const PROJECT_STATUSES = ["idea", "active", "paused", "done"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+export interface ProjectData {
+  name: string;
+  client_id?: string | null;
+  status: ProjectStatus | string;
+  rate?: number | null; // what an hour is worth (rate_unit hour), or the whole job (fixed)
+  rate_unit?: "hour" | "fixed";
+  currency?: string;
+  start?: string | null; // YYYY-MM-DD
+  due?: string | null; // YYYY-MM-DD, when it should be finished
+  repo?: string; // where the code lives
+  url?: string; // where it's live
+  notes?: string;
+  pinned?: boolean;
+  timer_from?: number | null; // a timer running since then (epoch ms); stopping it logs the time
+  [k: string]: unknown;
+}
+export interface ClientData {
+  name: string;
+  company?: string;
+  phone?: string;
+  email?: string;
+  rate?: number | null; // usual hourly rate, offered for new projects
+  notes?: string;
+  past?: boolean; // no longer working together: kept, out of the way
+  [k: string]: unknown;
+}
+export interface WorkLogData {
+  project_id?: string | null;
+  type: "time" | "payment" | string;
+  date: string; // YYYY-MM-DD
+  minutes?: number | null; // time
+  billable?: boolean; // time: counts towards what the client owes (default yes)
+  amount?: number | null; // payment received
+  note?: string;
+  money_id?: string | null; // payment: the income saved in Money
+  [k: string]: unknown;
+}
+export interface ServerData {
+  name: string;
+  provider?: string; // who hosts it: "Hetzner", "AWS"...
+  host?: string; // address or IP
+  user?: string; // who you log in as (never the password)
+  os?: string;
+  cost?: number | null; // a month
+  renews_on?: string | null; // YYYY-MM-DD, next bill
+  remind?: number[]; // days before it renews that a reminder rings
+  notes?: string; // what runs on it
+  gone?: boolean; // shut down: kept, out of the way
+  [k: string]: unknown;
+}
+export interface DomainData {
+  name: string; // example.com
+  registrar?: string;
+  expires_on?: string | null; // YYYY-MM-DD
+  auto_renew?: boolean;
+  cost?: number | null; // a year
+  project_id?: string | null;
+  server_id?: string | null;
+  remind?: number[]; // days before it expires [30, 7, 1]
+  notes?: string;
+  gone?: boolean; // let it go: kept, out of the way
+  [k: string]: unknown;
+}
+
+// Interests: what you practise (a language, an instrument, a sport) and how often, words to
+// remember (flashcards), games, books and shows, and things you'd like one day.
+export interface InterestData {
+  name: string;
+  goal_min?: number | null; // minutes a week you'd like to spend on it
+  notes?: string;
+  archived?: boolean;
+  [k: string]: unknown;
+}
+export interface PracticeData {
+  interest_id?: string | null;
+  date: string; // YYYY-MM-DD
+  minutes: number;
+  note?: string;
+  [k: string]: unknown;
+}
+export interface WordData {
+  interest_id?: string | null; // which language (or subject) it belongs to
+  term: string;
+  meaning: string;
+  say?: string; // how it sounds, in your letters
+  example?: string;
+  box?: number; // 0..5: how well you know it (each right answer moves it up, a wrong one back to 0)
+  due?: string | null; // YYYY-MM-DD: when it comes up again
+  right?: number;
+  wrong?: number;
+  [k: string]: unknown;
+}
+export const MEDIA_TYPES = ["game", "book", "show", "movie", "course", "other"] as const;
+export const MEDIA_STATUSES = ["want", "doing", "done", "dropped"] as const;
+export interface MediaData {
+  name: string;
+  type: (typeof MEDIA_TYPES)[number] | string;
+  status: (typeof MEDIA_STATUSES)[number] | string;
+  platform?: string; // where: PlayStation, Netflix, Kindle...
+  progress?: string; // "Season 2, ep 4", "page 120", "chapter 6"
+  rating?: number | null; // 1..5 stars
+  started_on?: string | null;
+  finished_on?: string | null;
+  notes?: string;
+  [k: string]: unknown;
+}
+export interface WishData {
+  name: string;
+  price?: number | null;
+  link?: string;
+  priority?: "high" | "normal" | "low";
+  notes?: string;
+  got?: boolean;
+  got_on?: string | null;
+  money_id?: string | null; // the expense saved when you got it
+  thing_id?: string | null; // and the entry in My things
+  [k: string]: unknown;
+}
+
 export interface KindData {
   todo: TodoData;
   item: ItemData;
@@ -166,6 +313,16 @@ export interface KindData {
   car: CarData;
   car_log: CarLogData;
   thing: ThingData;
+  project: ProjectData;
+  client: ClientData;
+  work_log: WorkLogData;
+  server: ServerData;
+  domain: DomainData;
+  interest: InterestData;
+  practice: PracticeData;
+  word: WordData;
+  media: MediaData;
+  wish: WishData;
 }
 
 export interface Rec<K extends Kind = Kind> {
