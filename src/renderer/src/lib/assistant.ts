@@ -1,7 +1,8 @@
 // What the assistant is told about "now" with each request: your date, time and time zone, so
-// "tomorrow" and "at 5" mean what you mean.
+// "tomorrow" and "at 5" mean what you mean, and your currency, so amounts are in it.
 import { isoDate } from "@myapp/core";
 import { WEEKDAYS_LONG } from "@/lib/format";
+import { useSettings } from "@/store/settings";
 
 export const requestContext = () => {
   const d = new Date();
@@ -11,5 +12,5 @@ export const requestContext = () => {
   } catch {
     tz = "";
   }
-  return { today: isoDate(d), time: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, weekday: WEEKDAYS_LONG[d.getDay()], tz };
+  return { today: isoDate(d), time: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, weekday: WEEKDAYS_LONG[d.getDay()], tz, currency: useSettings.getState().currency };
 };

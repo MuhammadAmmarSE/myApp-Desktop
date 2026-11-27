@@ -46,6 +46,25 @@ function operatorTurn(body) {
   const first = (msgs.find((m) => m.role === "user") || {}).content;
   const text = Array.isArray(first) ? first.map((p) => p.text || "").join(" ") : String(first || "");
   if (/photo/i.test(text) || Array.isArray(first)) return { content: "I can see the photo you sent." };
+  // your records: looks up "my brother", then proposes his shoe size and a to-do to save
+  if (/brother/i.test(text)) {
+    if (steps === 0) return { tool_calls: [call("find_records", { query: "sibling", kinds: ["person"] })] };
+    if (steps === 1) {
+      const him = JSON.parse([...msgs].reverse().find((m) => m.role === "tool").content).records[0];
+      return {
+        tool_calls: [
+          call("propose_changes", {
+            why: `${him.data.name}'s shoe size, and a call`,
+            changes: [
+              { op: "update", id: him.id, set: { details: (him.data.details || []).concat([{ label: "Shoe size", value: "42" }]) } },
+              { op: "create", kind: "todo", data: { title: `Call ${him.data.name}`, due: day(0) } },
+            ],
+          }),
+        ],
+      };
+    }
+    return { content: "Your brother is Jamie. His shoe size and a to-do are on a card for you to save." };
+  }
   if (steps === 0) return { content: "Checking first.", tool_calls: [call("run_command", { command: "echo all-good", why: "look before changing anything" })] };
   if (steps === 1) return { tool_calls: [call("run_command", { command: `rm -f ${path.join(work, "scratch.txt")}`, why: "tidy up the scratch file" })] };
   const last = [...msgs].reverse().find((m) => m.role === "tool");

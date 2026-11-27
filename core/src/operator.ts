@@ -1,3 +1,5 @@
+import type { Change } from "./assist";
+
 // Turns a conversation's events (and those of the Claude sessions it started) into what the screen
 // shows: your messages, its answers, and one card per step with its question, output and result.
 export interface OpEvent {
@@ -34,6 +36,14 @@ export interface ClaudeSession {
   cost?: number;
   minutes?: number;
 }
+// changes to your records the assistant proposed in one step; you save the ones you keep
+export interface ProposalItem {
+  id: string; // the step's call id
+  changes: Change[];
+  dropped: { index: number; reason: string }[];
+  // what you did with each change, by its place in the list
+  decided: Record<number, { saved: boolean; recordId?: string }>;
+}
 export interface Step {
   kind: "step";
   id: number;
@@ -47,6 +57,7 @@ export interface Step {
   change?: string;
   ask?: AskItem;
   claude?: ClaudeSession;
+  proposal?: ProposalItem;
   at: number;
 }
 export type OpItem =
@@ -151,6 +162,16 @@ export function buildTimeline(events: OpEvent[], conversationId: number): OpItem
           if (s.status === "running") s.status = d.status;
         }
         break;
+      case "proposal": {
+        const s = steps.get(d.call_id);
+        if (s) s.proposal = { id: String(d.call_id), changes: Array.isArray(d.changes) ? d.changes : [], dropped: Array.isArray(d.dropped) ? d.dropped : [], decided: {} };
+        break;
+      }
+      case "proposal_decided": {
+        const s = steps.get(d.call_id);
+        if (s && s.proposal) for (const r of Array.isArray(d.results) ? d.results : []) if (typeof r.index === "number" && !s.proposal.decided[r.index]) s.proposal.decided[r.index] = { saved: !!r.saved, recordId: r.record_id || undefined };
+        break;
+      }
       case "tool_result": {
         const s = steps.get(d.call_id);
         if (s) Object.assign(s, { status: d.ok ? "ok" : "failed", summary: String(d.summary || "") });
@@ -182,6 +203,11 @@ const TITLES: Record<string, string> = {
   set_repo_secret: "Repository secret",
   dns: "DNS",
   claude_task: "Claude Code",
+  find_records: "Looked through your records",
+  get_records: "Read your records",
+  money_totals: "Added up your money",
+  my_overview: "Looked at your day",
+  propose_changes: "Changes for you to save",
 };
 
 // what a step card says in one line, and what it shows in code type underneath
@@ -194,6 +220,10 @@ export function describeStep(s: Step): { title: string; code: string; why: strin
   if (s.tool === "github") return { title, code: `${a.method || "GET"} ${a.path || ""}`, why: a.why || "" };
   if (s.tool === "set_repo_secret") return { title, code: `${a.name} → ${a.repo}`, why: a.why || "" };
   if (s.tool === "dns") return { title, code: `${a.action} ${a.type || ""} ${a.name ? `${a.name}.` : ""}${a.domain || ""}${a.data ? ` → ${a.data}` : ""}`.replace(/\s+/g, " "), why: a.why || "" };
+  if (s.tool === "find_records") return { title, code: [a.query ? `"${a.query}"` : "", (a.kinds || []).join(", ")].filter(Boolean).join(" in ") || "everything", why: "" };
+  if (s.tool === "money_totals") return { title, code: [a.from, a.to].filter(Boolean).join(" to ") || "this month", why: "" };
+  if (s.tool === "get_records" || s.tool === "my_overview") return { title, code: "", why: "" };
+  if (s.tool === "propose_changes") return { title, code: "", why: a.why || "" };
   // a Claude session's card says its own title
   if (s.tool === "claude_task") return { title, code: s.claude ? "" : a.title || "", why: "" };
   return { title, code: "", why: "" };

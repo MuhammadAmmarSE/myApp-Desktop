@@ -333,4 +333,67 @@ ok("money: months, summaries, trend, pace, recurring", () => {
   assert.deepStrictEqual([cmp.now, cmp.before], [400, 200], "last month only up to the same day");
   assert.strictEqual(cmp.change, 1);
 });
+ok("assist: cleanChange makes a clean create, update and remove", () => {
+  const recs = {
+    p1: { kind: "person", data: { name: "Sara", relation: "wife" } },
+    t1: { kind: "todo", data: { title: "Call the plumber", done: false } },
+    m1: { kind: "money", data: { type: "expense", amount: 500, currency: "PKR", category: "Fuel", date: "2026-11-20" } },
+    r1: { kind: "reminder", data: { text: "Pills", at: new Date(2026, 10, 27, 9, 0).getTime(), done: false } },
+  };
+  const ctx = { today: "2026-11-27", get: (id) => recs[id] || null };
+  const a = c.cleanChange({ op: "create", kind: "date", data: { title: " Sara's birthday ", kind: "Birthday", month: "4", day: 12, person_id: "p1", colour: "red" } }, ctx);
+  assert.deepStrictEqual(a.change, { op: "create", kind: "date", data: { title: "Sara's birthday", kind: "birthday", month: 4, day: 12, person_id: "p1" } });
+  assert.deepStrictEqual(a.ignored, ["colour"]);
+  assert.match(c.cleanChange({ op: "create", kind: "date", data: { title: "x", month: 4, day: 12, person_id: "t1" } }, ctx).error, /no person/);
+  assert.match(c.cleanChange({ op: "create", kind: "event", data: { title: "Dinner", date: "28/11" } }, ctx).error, /date like/);
+  assert.match(c.cleanChange({ op: "create", kind: "todo", data: {} }, ctx).error, /needs title/);
+  assert.match(c.cleanChange({ op: "create", kind: "spaceship", data: {} }, ctx).error, /no kind/);
+  const m = c.cleanChange({ op: "add", kind: "money", data: { amount: "1,200", category: "fuel", type: "expense" } }, ctx);
+  assert.deepStrictEqual(m.change.data, { amount: 1200, category: "Fuel", type: "expense" });
+  assert.match(c.cleanChange({ op: "create", kind: "money", data: { amount: 0 } }, ctx).error, /amount/);
+  const u = c.cleanChange({ op: "update", id: "p1", set: { phone: "0300 0000000", details: [{ label: "Shoe size", value: "38" }, { label: "", value: "x" }] } }, ctx);
+  assert.deepStrictEqual(u.change, { op: "update", id: "p1", kind: "person", set: { phone: "0300 0000000", details: [{ label: "Shoe size", value: "38" }] }, title: "Sara" });
+  assert.match(c.cleanChange({ op: "update", id: "p1", set: { name: "" } }, ctx).error, /can't be emptied/);
+  assert.match(c.cleanChange({ op: "update", id: "nope", set: { name: "x" } }, ctx).error, /no record/);
+  assert.deepStrictEqual(c.cleanChange({ op: "update", id: "m1", set: { category: "food & dining" } }, ctx).change.set, { category: "Food & dining" });
+  assert.deepStrictEqual(c.cleanChange({ op: "delete", id: "t1" }, ctx).change, { op: "remove", id: "t1", kind: "todo", title: "Call the plumber" });
+});
+ok("assist: new and changed records get what the forms would fill in", () => {
+  const today = "2026-11-27";
+  const money = c.newRecordData({ op: "create", kind: "money", data: { amount: 300, category: "Fuel" } }, { currency: "PKR", today });
+  assert.deepStrictEqual(money, { type: "expense", currency: "PKR", date: today, account: "cash", amount: 300, category: "Fuel" });
+  const rem = c.newRecordData({ op: "create", kind: "reminder", data: { text: "Pills", time: "21:00" } }, { currency: "PKR", today });
+  assert.strictEqual(rem.at, c.toEpoch(today, "21:00"));
+  assert.ok(!("time" in rem) && rem.done === false);
+  const item = c.newRecordData({ op: "create", kind: "item", data: { name: "Milk", mode: "online" } }, { currency: "PKR", today });
+  assert.deepStrictEqual([item.list, item.mode, item.today, item.done], ["grocery", "online", false, false]);
+  const was = { text: "Pills", at: new Date(2026, 10, 27, 9, 0).getTime(), done: false };
+  const next = c.updatedRecordData("reminder", was, { time: "10:30" });
+  assert.strictEqual(next.at, new Date(2026, 10, 27, 10, 30).getTime());
+  assert.deepStrictEqual(c.updatedRecordData("person", { name: "Sara", relation: "wife", phone: "1" }, { phone: null }), { name: "Sara", relation: "wife" });
+});
+ok("assist: records in words, and found by search", () => {
+  const p = { id: "p1", kind: "person", data: { name: "Sara", relation: "wife", details: [{ label: "Shoe size", value: "38" }] } };
+  assert.deepStrictEqual(c.describeRecord("person", p.data), { title: "Sara", detail: "Wife · 1 details" });
+  const docs = [p, { id: "t1", kind: "todo", data: { title: "Buy a gift", done: false } }].map(c.recordDoc);
+  assert.deepStrictEqual(c.search(docs, "wife").map((h) => h.doc.id), ["p1"]);
+  assert.deepStrictEqual(c.search(docs, "shoe size").map((h) => h.doc.id), ["p1"]);
+  const ch = c.describeChange({ op: "update", id: "p1", kind: "person", set: { phone: "0300", notes: null }, title: "Sara" });
+  assert.deepStrictEqual(ch, { verb: "Change person", title: "Sara", detail: "Phone: 0300 · Notes: cleared" });
+  assert.ok(c.describeKinds().includes("person: name* (text), relation (me|wife"));
+});
+ok("timeline: a proposal and what you did with it", () => {
+  const ev = (id, type, data) => ({ id, run_id: 1, at: id, type, data });
+  const items = c.buildTimeline([
+    ev(1, "user", { text: "add milk" }),
+    ev(2, "tool", { call_id: "c1", tool: "propose_changes", args: {} }),
+    ev(3, "proposal", { call_id: "c1", changes: [{ op: "create", kind: "item", data: { name: "Milk" } }, { op: "remove", id: "t1", kind: "todo", title: "x" }], dropped: [] }),
+    ev(4, "tool_result", { call_id: "c1", ok: true, summary: "2 changes" }),
+    ev(5, "proposal_decided", { call_id: "c1", results: [{ index: 0, saved: true, record_id: "r9" }] }),
+    ev(6, "proposal_decided", { call_id: "c1", results: [{ index: 0, saved: false }, { index: 1, saved: false }] }),
+  ], 1);
+  const step = items.find((i) => i.kind === "step");
+  assert.strictEqual(step.proposal.changes.length, 2);
+  assert.deepStrictEqual(step.proposal.decided, { 0: { saved: true, recordId: "r9" }, 1: { saved: false, recordId: undefined } }, "a decision stands once made");
+});
 console.log(`core: ${n} checks passed`);

@@ -37,6 +37,12 @@ main process (Node)                       screens (Chromium, sandboxed)
   needs approval shows in the chat and in a banner on every page; approving calls
   `confirmIdentity()`: Touch ID on a Mac that has it, otherwise your account password, which the
   server checks (`/auth/confirm`). There is no way to approve without it.
+- **Your records in the assistant**: the server reads its copy of your records to answer and
+  never changes one. A look is one quiet line; changes it proposes come as a card
+  (`components/assistant/Proposal.tsx`). Save runs `lib/proposals.ts`: cleaned again against this
+  computer's records (core's `cleanChange`), saved through `store/records.ts`, Undo in the toast.
+  What you decided goes to `/operator/runs/:id/proposals/:callId` and is kept in the records
+  store's `meta` until the server has it, so a card can't be saved twice.
 
 ## Look and motion
 

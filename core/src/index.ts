@@ -12,3 +12,4 @@ export * from "./search";
 export * from "./format";
 export * from "./derive";
 export * from "./operator";
+export * from "./assist";

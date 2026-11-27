@@ -479,6 +479,26 @@ async function scenario(name, fn, always = false) {
     if (workdir && !fs.existsSync(path.join(workdir, "scratch.txt"))) throw new Error("the refused command ran anyway");
   });
 
+  await scenario("assistant: it knows your people, and saves what it proposes when you click", async () => {
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.keyboard.press("n");
+    await win.getByTestId("composer").fill("What's my brother's name? Add his shoe size 42 and remind me to call him");
+    await win.getByTestId("send").click();
+    const card = win.getByTestId("proposal");
+    await card.waitFor({ timeout: 30000 });
+    await win.getByTestId("timeline").getByText("Your brother is Jamie.", { exact: false }).waitFor({ timeout: 30000 });
+    await win.getByTestId("timeline").getByText("Looked through your records", { exact: false }).waitFor();
+    await card.getByText("Change person").waitFor();
+    await card.getByText("Shoe size 42", { exact: false }).waitFor();
+    await card.getByText("Call Jamie").waitFor();
+    await card.getByRole("button", { name: "Save all 2" }).click();
+    await until("both saved", async () => (await card.getByText("Saved", { exact: true }).count()) === 2);
+    // saved here like any change, and synced to the server
+    await until("the to-do on the server", async () => (await live("todo")).find((r) => r.data.title === "Call Jamie"));
+    await until("his shoe size on the server", async () => (await live("person")).find((r) => r.data.name === "Jamie" && (r.data.details || []).some((d) => d.label === "Shoe size" && d.value === "42")));
+  });
+
   await scenario("settings: theme, wallpaper, effects and text size apply at once", async () => {
     await go("/settings?section=appearance");
     const accent = () => win.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--c-accent").trim());

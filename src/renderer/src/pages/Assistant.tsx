@@ -11,6 +11,7 @@ import { buildTimeline, type OpEvent } from "@myapp/core";
 import { Button, Card, Chip, confirmDialog, Empty, IconButton, Input, Menu, Segmented, Skeleton, SkeletonRows, Tag, toast, useContextMenu, Working } from "@/components/ui";
 import { Orb } from "@/components/orb/Orb";
 import { StepCard } from "@/components/assistant/Steps";
+import { LookedUp, ProposalCard, READ_TOOLS } from "@/components/assistant/Proposal";
 import { Reply } from "@/components/assistant/Reply";
 import { Composer } from "@/components/assistant/Composer";
 import { availabilityOf, deleteChat, markChat, renameChat, useOperator, type ChatCounts, type Run } from "@/store/operator";
@@ -34,7 +35,7 @@ const STATUS: Record<Run["status"], { label: string; tone: "accent" | "success" 
 };
 const live = (s?: Run["status"]) => s === "running" || s === "waiting";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const IDEAS = ["What's running in pm2?", "How much disk space is left?", "List my GitHub repos", "Is the hub healthy?"];
+const IDEAS = ["What's on today?", "How much did I spend this month?", "What's running in pm2?", "How much disk space is left?"];
 const CONNECTIONS = [
   ["server", "Server"],
   ["github", "GitHub"],
@@ -254,10 +255,10 @@ function Home() {
           What should I do?
         </motion.h2>
         <motion.p {...rise(2)} className="mb-6 text-center text-[13.5px] text-text2">
-          On your server and accounts. Risky steps wait for your fingerprint or password.
+          It knows what you keep here. Changes wait for your click, risky steps for your fingerprint or password.
         </motion.p>
         <motion.div {...rise(3)}>
-          <Composer big placeholder="e.g. Make a private repo called notes, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus />
+          <Composer big placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus />
         </motion.div>
         <motion.div {...rise(4)} className="mt-3 flex flex-wrap justify-center gap-1.5">
           {IDEAS.map((i) => (
@@ -558,6 +559,8 @@ function Conversation({ runId }: { runId: number }) {
               if (it.kind === "reply") return <Reply key={it.id} text={it.text} />;
               if (it.kind === "error") return <p key={it.id} className="px-1 text-[13.5px] text-danger">{it.text}</p>;
               if (it.kind === "stopped") return <p key={it.id} className="self-center text-[12px] text-text3">Stopped</p>;
+              if (READ_TOOLS.includes(it.tool)) return <LookedUp key={it.id} step={it} />;
+              if (it.tool === "propose_changes" && it.proposal) return <ProposalCard key={it.id} runId={runId} step={it} />;
               return <StepCard key={it.id} step={it} />;
             })}
             {run && live(run.status) && !pendingHere && (
