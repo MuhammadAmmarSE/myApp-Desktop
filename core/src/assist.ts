@@ -46,7 +46,7 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
   },
   item: {
     label: "List item",
-    fields: { name: "text", qty: "text", list: one(["grocery", "shopping"]), mode: one(["store", "online"]), today: "bool", done: "bool", link: "text", note: "text", price: "num", regular: "bool" },
+    fields: { name: "text", qty: "text", list: one(["grocery", "shopping"]), mode: one(["store", "online"]), today: "bool", done: "bool", link: "text", note: "text", price: "num", regular: "bool", fund_id: ref("fund") },
     required: ["name"],
   },
   note: { label: "Note", fields: { title: "text", body: "long", pinned: "bool", tags: "tags" }, required: [], anyOf: ["title", "body"] },
@@ -59,7 +59,18 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
   },
   money: {
     label: "Money",
-    fields: { type: one(["expense", "income"]), amount: "num", currency: "currency", category: "text", note: "text", date: "date", account: one(["cash", "bank", "card", "wallet"]), recurring: one(["monthly"]) },
+    fields: {
+      type: one(["expense", "income"]),
+      amount: "num",
+      currency: "currency",
+      category: "text",
+      note: "text",
+      date: "date",
+      account: one(["cash", "bank", "card", "wallet"]),
+      recurring: one(["monthly"]),
+      paid_from: ref("fund"),
+      settles: ref("fund"),
+    },
     required: ["amount"],
   },
   event: { label: "Event", fields: { title: "text", date: "date", time: "time", place: "text", note: "long", person_id: ref("person"), remind_min: int(0, 10080) }, required: ["title", "date"] },
@@ -163,6 +174,10 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
     required: ["name"],
   },
   wish: { label: "Wish", fields: { name: "text", price: "num", link: "text", priority: one(["high", "normal", "low"]), notes: "long", got: "bool", got_on: "date" }, required: ["name"] },
+  memory: { label: "Memory", fields: { text: "long", topic: "text" }, required: ["text"] },
+  // money someone gave you to spend for them; what you spend of it is money with paid_from, and
+  // settling it (giving back, keeping, being paid back) is done on its hisaab page in the app
+  fund: { label: "Money given to you to spend", fields: { from: "text", person_id: ref("person"), purpose: "text", amount: "num", currency: "currency", date: "date", notes: "long" }, required: ["from", "amount"] },
 };
 
 // the fields of every kind in words, for the AI's tool description
@@ -323,6 +338,7 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
       if (!((out.amount as number) > 0)) return { error: "money needs an amount above 0" };
       out.category = category(out.category, out.type);
     }
+    if (kind === "fund" && !((out.amount as number) > 0)) return { error: "money given to you needs an amount above 0" };
     if (kind === "work_log") {
       const type = out.type || (out.amount ? "payment" : "time");
       if (type === "time" && !out.minutes) return { error: "time on a project needs minutes" };
@@ -400,6 +416,8 @@ export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { 
       return Object.assign({ box: 0, due: ctx.today, right: 0, wrong: 0 }, d);
     case "wish":
       return Object.assign({ priority: "normal", got: false }, d);
+    case "fund":
+      return Object.assign({ purpose: "Shopping", currency: ctx.currency, date: ctx.today, moves: [], closed: false }, d);
     default:
       return d;
   }
@@ -460,7 +478,10 @@ export function describeRecord(kind: Kind, d: any, opts: { currency?: string; to
     case "date":
       return { title: d.title || "Date", detail: join([d.month && d.day ? monthDay(d.month, d.day) : "", d.year, d.kind === "birthday" ? "Birthday" : d.kind === "anniversary" ? "Anniversary" : "", "every year"]) };
     case "money":
-      return { title: d.note || d.category || "Money", detail: join([`${d.type === "income" ? "Earned" : "Spent"} ${money(Number(d.amount) || 0, cur)}`, d.category, day(d.date), d.recurring ? "Every month" : ""]) };
+      return {
+        title: d.note || d.category || "Money",
+        detail: join([`${d.type === "income" ? "Earned" : "Spent"} ${money(Number(d.amount) || 0, cur)}`, d.category, day(d.date), d.recurring ? "Every month" : "", d.paid_from ? "Out of money given to you" : ""]),
+      };
     case "event":
       return { title: d.title || "Event", detail: join([day(d.date), t(d.time), d.place]) };
     case "reminder": {
@@ -497,6 +518,10 @@ export function describeRecord(kind: Kind, d: any, opts: { currency?: string; to
       return { title: d.name || "Media", detail: join([d.type, d.status, d.progress, d.rating ? `${d.rating}/5` : ""]) };
     case "wish":
       return { title: d.name || "Wish", detail: join([d.price ? money(d.price, cur) : "", d.got ? "Got it" : d.priority === "high" ? "High priority" : ""]) };
+    case "memory":
+      return { title: d.text || "Memory", detail: d.topic ? `About ${d.topic}` : "Remembered" };
+    case "fund":
+      return { title: `${d.purpose || "Money"} · from ${d.from || "someone"}`, detail: join([`Gave you ${money(Number(d.amount) || 0, cur)}`, day(d.date), d.closed ? "Settled" : ""]) };
   }
   return { title: KIND_SPECS[kind as Kind]?.label || String(kind), detail: "" };
 }

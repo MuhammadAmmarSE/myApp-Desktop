@@ -54,8 +54,31 @@ export default function Lists() {
   const spent = bought.reduce((n, i) => n + (i.data.price || 0), 0);
 
   const toggle = (it: Rec<"item">) => {
-    const before = useRecords.getState().byId[it.id];
-    useRecords.getState().update<"item">(it.id, { done: !it.data.done, done_at: it.data.done ? null : Date.now() });
+    const s = useRecords.getState();
+    const before = s.byId[it.id];
+    // bought with someone else's money: what it cost goes on their hisaab, so ask
+    const fund = it.data.fund_id ? s.byId[it.data.fund_id] : undefined;
+    if (!it.data.done && fund && !fund.deleted && !it.data.money_id) return edit("item", it, { buying: true });
+    if (it.data.done && it.data.money_id) {
+      // not bought after all: what it cost comes back out of Money (or the hisaab) too
+      const m = s.byId[it.data.money_id];
+      s.update<"item">(it.id, { done: false, done_at: null, money_id: null, price: null });
+      if (m && !m.deleted) {
+        s.remove(m.id);
+        toast(`${it.data.name}: not bought, its cost taken back out`, {
+          action: {
+            label: "Undo",
+            run: () => {
+              const st = useRecords.getState();
+              st.restore(m);
+              if (before) st.restore(before);
+            },
+          },
+        });
+      }
+      return;
+    }
+    s.update<"item">(it.id, { done: !it.data.done, done_at: it.data.done ? null : Date.now() });
     if (!it.data.done) toast(`Bought ${it.data.name}`, { action: { label: "Undo", run: () => before && useRecords.getState().restore(before) }, ms: 3500 });
   };
   const remove = (list: Rec<"item">[]) => {
@@ -180,7 +203,7 @@ export default function Lists() {
                             {b.data.name}
                           </button>
                           <span className="text-[11.5px] text-text3">{ago(b.data.done_at || b.updated_at)}</span>
-                          {b.data.money_id && <Tag tone="success">in Money</Tag>}
+                          {b.data.money_id && <Tag tone="success">{b.data.fund_id ? "on a hisaab" : "in Money"}</Tag>}
                           <IconButton icon={RotateCcw} label="Put it back on the list" size="xs" className="opacity-0 group-hover:opacity-100" onClick={() => toggle(b)} />
                         </div>
                       ))}

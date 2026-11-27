@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import clsx from "clsx";
 import {
   BellRing,
+  BookOpen,
   Bookmark,
   Briefcase,
   Cake,
@@ -17,6 +18,8 @@ import {
   Clapperboard,
   Fuel,
   Gift,
+  HandCoins,
+  Brain,
   Globe,
   Handshake,
   Languages,
@@ -41,7 +44,7 @@ import { decide, decisionsOf, flush, useProposals } from "@/lib/proposals";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 
-export const READ_TOOLS = ["find_records", "get_records", "money_totals", "my_overview"];
+export const READ_TOOLS = ["find_records", "get_records", "money_totals", "my_overview", "app_guide"];
 
 const KIND_ICON: Record<Kind, LucideIcon> = {
   todo: ListChecks,
@@ -66,8 +69,10 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   word: Languages,
   media: Clapperboard,
   wish: Gift,
+  memory: Brain,
+  fund: HandCoins,
 };
-const READ_ICON: Record<string, LucideIcon> = { find_records: Search, get_records: Search, money_totals: Calculator, my_overview: LayoutList };
+const READ_ICON: Record<string, LucideIcon> = { find_records: Search, get_records: Search, money_totals: Calculator, my_overview: LayoutList, app_guide: BookOpen };
 
 // one look at your records: a line, not a card
 export function LookedUp({ step }: { step: Step }) {

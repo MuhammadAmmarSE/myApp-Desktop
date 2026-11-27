@@ -4,7 +4,29 @@
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
-import { AlarmClock, ArrowRight, BellRing, Cake, CalendarDays, CalendarHeart, CarFront, CheckSquare, Clock, Copy, Globe, Languages, Plus, ShieldCheck, ShoppingCart, Sparkles, TrendingDown, TrendingUp, Wallet, type LucideIcon } from "lucide-react";
+import {
+  AlarmClock,
+  ArrowRight,
+  BellRing,
+  Cake,
+  CalendarDays,
+  CalendarHeart,
+  CarFront,
+  CheckSquare,
+  Clock,
+  Copy,
+  Globe,
+  HandCoins,
+  Languages,
+  Plus,
+  ShieldCheck,
+  ShoppingCart,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { addDays, briefLine, dueWords, countdown, dayProgress, dayTimeline, dueBy, greeting, isOpenTodo, isoDate, moneyPace, monthTotals, nextUp, partOfDay, sortTodos, todoProgress, upcoming, WEEKDAYS_LONG, type TimelineItem } from "@myapp/core";
 import { Button, Card, CardTitle, Empty, IconButton, Page, ProgressRing, CountUp, Pulse, Tag, toast } from "@/components/ui";
 import { Sparkline } from "@/components/charts";
@@ -16,6 +38,7 @@ import { edit } from "@/store/ui";
 import { carHeadsUp } from "@/lib/car";
 import { warrantyHeadsUp } from "@/lib/things";
 import { workHeadsUp } from "@/lib/work";
+import { useFunds } from "@/lib/funds";
 import { isInbox } from "@/lib/inbox";
 import { useNow } from "@/lib/clock";
 import { navigate } from "@/lib/router";
@@ -69,6 +92,7 @@ export default function Today() {
     return per.map((v) => (run += v));
   }, [money_, today, currency]);
 
+  const funds = useFunds();
   const heads = useMemo(() => {
     const out: Heads[] = [];
     const late = todos.filter((t) => !t.data.done && t.data.due && t.data.due < today).length;
@@ -84,12 +108,17 @@ export default function Today() {
     if (waiting.length) out.push({ key: "inbox", icon: Sparkles, text: waiting.length === 1 ? "A note saved offline is waiting for the AI" : `${waiting.length} notes saved offline are waiting for the AI`, tone: "accent", to: "/notes" });
     const soon = coming.find((u) => u.kind === "date" && u.days <= 3);
     if (soon) out.push({ key: "date", icon: CalendarHeart, text: `${soon.title} ${soon.days === 0 ? "today" : soon.days === 1 ? "tomorrow" : `in ${soon.days} days`}`, tone: "accent", to: "/people" });
+    // someone's money, everything bought: give back what's left, or settle what you spent over
+    for (const f of funds.open.filter((r) => !r.summary.toBuy.length && r.summary.left !== 0 && r.summary.spends.length).slice(0, 2)) {
+      const amount = money(Math.abs(f.summary.left), f.fund.data.currency || currency);
+      out.push({ key: `fund-${f.fund.id}`, icon: HandCoins, text: f.summary.left > 0 ? `${amount} of ${f.fund.data.from}'s money left with you` : `You spent ${amount} over ${f.fund.data.from}'s money`, tone: "accent", to: `/funds/${f.fund.id}` });
+    }
     if (pace.change != null && pace.now > 0 && Math.abs(pace.change) >= 0.15) {
       const pct = Math.round(Math.abs(pace.change) * 100);
       out.push({ key: "pace", icon: pace.change > 0 ? TrendingUp : TrendingDown, text: `Spending ${pace.change > 0 ? "up" : "down"} ${pct}% on last month so far`, tone: pace.change > 0 ? "warn" : "success", to: "/money" });
     }
     return out;
-  }, [todos, cars, carLogs, things, domains, servers, words, notes, coming, pace, today]);
+  }, [todos, cars, carLogs, things, domains, servers, words, notes, coming, pace, funds, currency, today]);
 
   const brief = briefLine({ next: next ? { title: next.item.title, when: countdown(next.inMs) } : null, open: progress.open, done: progress.done, heads: heads.length });
   const part = partOfDay(nowMs);

@@ -26,6 +26,8 @@ export const KINDS = [
   "word",
   "media",
   "wish",
+  "memory",
+  "fund",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (k: unknown): k is Kind => typeof k === "string" && (KINDS as readonly string[]).includes(k);
@@ -58,6 +60,7 @@ export interface ItemData {
   price?: number | null;
   regular?: boolean; // shows in Regulars, to add again in one tap
   money_id?: string | null; // the expense saved when it was bought
+  fund_id?: string | null; // to buy with money someone gave you (a fund): what it costs comes off it
 }
 
 export interface NoteData {
@@ -107,6 +110,12 @@ export interface MoneyData {
   date: string; // YYYY-MM-DD
   account?: "cash" | "bank" | "card" | "wallet";
   recurring?: "monthly" | null;
+  // spent out of money someone gave you (a fund's id): it comes off their money, not yours, so it
+  // isn't in your own totals
+  paid_from?: string | null;
+  // what's left of a fund kept as your income, or what you spent over it covered yourself (the
+  // fund's id): yours, counted like any money
+  settles?: string | null;
 }
 
 export interface EventData {
@@ -300,6 +309,41 @@ export interface WishData {
   [k: string]: unknown;
 }
 
+// Something the assistant knows about you that isn't a record of its own: a preference, a routine,
+// a fact worth remembering ("I work from home on Fridays", "Sara doesn't eat beef"). You see, change
+// and delete them in the app; the assistant proposes new ones and you save them, like any change.
+export interface MemoryData {
+  text: string;
+  topic?: string; // a word or two to group by: "work", "family", "food"
+  [k: string]: unknown;
+}
+
+// Money someone gave you to spend for them: "Mother gave me 5000 for groceries". What you buy with
+// it (list items and expenses with paid_from) comes off it instead of your own money. When it's
+// done, what's left is returned or kept (kept = your income), and if you spent more than they
+// gave, they pay you back or you cover it (covered = your spending). Its hisaab is all in one place.
+export type FundMoveType = "more" | "returned" | "kept" | "paid_back" | "covered";
+export interface FundMove {
+  type: FundMoveType; // more: they gave more; returned / kept: what was left; paid_back / covered: what you spent over
+  amount: number;
+  date: string; // YYYY-MM-DD
+  note?: string;
+  money_id?: string | null; // kept: the income in Money; covered: the expense in Money
+}
+export interface FundData {
+  from: string; // who gave it, as you call them: "Mother"
+  person_id?: string | null;
+  purpose: string; // what for: "Groceries"
+  amount: number; // what they gave first
+  currency?: string;
+  date: string; // YYYY-MM-DD, when they gave it
+  notes?: string;
+  moves?: FundMove[];
+  closed?: boolean; // settled: nothing left with you and nothing owed
+  closed_on?: string | null;
+  [k: string]: unknown;
+}
+
 export interface KindData {
   todo: TodoData;
   item: ItemData;
@@ -323,6 +367,8 @@ export interface KindData {
   word: WordData;
   media: MediaData;
   wish: WishData;
+  memory: MemoryData;
+  fund: FundData;
 }
 
 export interface Rec<K extends Kind = Kind> {

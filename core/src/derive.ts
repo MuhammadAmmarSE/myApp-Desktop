@@ -59,7 +59,7 @@ export const monthTotals = (money: Rec<"money">[], month: string, currency: stri
   let earned = 0;
   const byCat = new Map<string, number>();
   for (const m of money) {
-    if (m.data.date.slice(0, 7) !== month || (m.data.currency || currency) !== currency) continue;
+    if (m.data.paid_from || m.data.date.slice(0, 7) !== month || (m.data.currency || currency) !== currency) continue;
     if (m.data.type === "income") earned += m.data.amount;
     else {
       spent += m.data.amount;

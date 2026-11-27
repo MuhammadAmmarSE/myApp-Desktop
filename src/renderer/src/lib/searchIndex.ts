@@ -9,7 +9,11 @@ import type { EditKind } from "@/store/ui";
 export type Group = "do" | Kind;
 export type Entry = SearchDoc & { group: Group; detail?: string; open: Open; kbd?: string };
 export type Open =
-  { to: string } | { edit: EditKind; rec?: Rec | null; preset?: Record<string, unknown> } | { copy: string; rec: Rec<"clip"> } | { set: Record<string, unknown>; say: string } | { run: "sync" | "quick" | "shortcuts" | "export" | "capture" };
+  | { to: string }
+  | { edit: EditKind; rec?: Rec | null; preset?: Record<string, unknown> }
+  | { copy: string; rec: Rec<"clip"> }
+  | { set: Record<string, unknown>; say: string }
+  | { run: "sync" | "quick" | "shortcuts" | "export" | "capture" };
 
 export const GROUP_WORD: Record<Group, string> = {
   do: "Go to and do",
@@ -35,6 +39,8 @@ export const GROUP_WORD: Record<Group, string> = {
   word: "Words",
   media: "Games, books & shows",
   wish: "Wishlist",
+  fund: "Money given to you to spend",
+  memory: "What the assistant remembers",
 };
 export const GROUP_ORDER: Group[] = [
   "do",
@@ -60,6 +66,8 @@ export const GROUP_ORDER: Group[] = [
   "word",
   "media",
   "wish",
+  "fund",
+  "memory",
 ];
 
 // pages and actions, always there
@@ -74,6 +82,7 @@ export function commands(mod = "Ctrl"): Entry[] {
     page("notes", "Notes", "/notes", "notebook write markdown", `${mod} 5`),
     page("saved", "Saved text", "/saved", "clips copy paste snippets"),
     page("money", "Money", "/money", "expenses spending income budget charts", `${mod} 6`),
+    page("memory", "What the assistant remembers", "/settings?section=memory", "memory memories remember about me preferences ai knows"),
     page("people", "People and dates", "/people", "birthdays anniversaries family contacts", `${mod} 7`),
     page("car", "My car", "/car", "fuel petrol service insurance papers vehicle"),
     page("things", "My things", "/things", "warranty receipts gadgets appliances"),
@@ -92,6 +101,7 @@ export function commands(mod = "Ctrl"): Entry[] {
     act("item", "Add to a list", "buy shopping grocery create", { edit: "item" }),
     act("expense", "Add an expense", "spent money paid create", { edit: "money" }, "Action", `${mod} Shift E`),
     act("income", "Add income", "earned salary money received", { edit: "money", preset: { type: "income" } }),
+    act("fund", "Someone gave me money to spend", "hisaab mother gave money groceries spend for them account owe", { to: "/money?add=fund" }),
     act("event", "Add an event", "calendar meeting appointment create", { edit: "event" }),
     act("reminder", "Set a reminder", "remind alert ring create", { edit: "reminder" }),
     act("note", "New note", "write create", { to: "/notes/new" }, "Action", `${mod} Shift N`),
@@ -198,9 +208,21 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       title: m.data.note || m.data.category,
       body: m.data.category,
       keywords: `${m.data.type} ${m.data.amount}`,
-      detail: `${m.data.type === "income" ? "Earned" : "Spent"} ${money(m.data.amount, m.data.currency || ctx.currency)} · ${shortDate(m.data.date, today)}`,
-      open: { edit: "money", rec: m },
+      detail: `${m.data.type === "income" ? "Earned" : "Spent"} ${money(m.data.amount, m.data.currency || ctx.currency)} · ${shortDate(m.data.date, today)}${m.data.paid_from ? " · on a hisaab" : ""}`,
+      open: m.data.paid_from ? { to: `/funds/${m.data.paid_from}` } : { edit: "money", rec: m },
     });
+  for (const f of lists.fund || [])
+    out.push({
+      id: f.id,
+      kind: "fund",
+      group: "fund",
+      title: `${f.data.purpose || "Money"} · from ${f.data.from}`,
+      body: f.data.notes,
+      keywords: `hisaab ${f.data.from} ${f.data.amount}`,
+      detail: `Gave you ${money(f.data.amount, f.data.currency || ctx.currency)} · ${shortDate(f.data.date, today)}${f.data.closed ? " · settled" : ""}`,
+      open: { to: `/funds/${f.id}` },
+    });
+  for (const m of lists.memory || []) out.push({ id: m.id, kind: "memory", group: "memory", title: m.data.text, keywords: m.data.topic, detail: m.data.topic ? `Remembered · ${m.data.topic}` : "Remembered", open: { to: "/settings?section=memory" } });
   for (const t of lists.thing)
     out.push({
       id: t.id,

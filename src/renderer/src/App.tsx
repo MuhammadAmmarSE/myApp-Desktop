@@ -2,7 +2,8 @@
 // from the tray, the menu, notifications and Quick capture arrive here.
 import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
 import { motion } from "motion/react";
-import { actionToRecords, type Kind } from "@myapp/core";
+import { actionToRecords, isKind } from "@myapp/core";
+import { addMove, useFunds } from "@/lib/funds";
 import type { Command } from "@shared/ipc";
 import { useApplyTheme } from "@/theme";
 import { page as pageMotion } from "@/theme/motion";
@@ -42,6 +43,7 @@ const CarPage = lazy(() => import("@/pages/Car"));
 const Things = lazy(() => import("@/pages/Things"));
 const Work = lazy(() => import("@/pages/Work"));
 const WorkProject = lazy(() => import("@/pages/WorkProject"));
+const Fund = lazy(() => import("@/pages/Fund"));
 const Interests = lazy(() => import("@/pages/Interests"));
 const Assistant = lazy(() => import("@/pages/Assistant"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -57,6 +59,7 @@ const ROUTES: [string, ComponentType<{ params: Record<string, string> }>][] = [
   ["/notes/:id", Notes],
   ["/saved", Saved],
   ["/money", Money],
+  ["/funds/:id", Fund],
   ["/people", People],
   ["/car", CarPage],
   ["/things", Things],
@@ -109,12 +112,25 @@ function handleCommand(cmd: Command) {
     else if (cmd.what === "income") edit("money", null, { type: "income" });
     else edit(cmd.what);
   } else if (cmd.type === "create") {
-    // what Quick capture saved: made here, where the records live
+    // what Quick capture saved: made here, where the records live. A draft may point at another one
+    // made in the same batch by its stand-in ref (a hisaab and what's bought with it).
     const s = useRecords.getState();
+    const made = new Map<string, string>();
+    const real = (v: unknown) => (typeof v === "string" && made.has(v) ? made.get(v) : v);
     let n = 0;
     for (const d of cmd.drafts) {
-      if (!d || typeof d.kind !== "string" || !d.data) continue;
-      s.create(d.kind as Kind, d.data);
+      if (!d || typeof d.kind !== "string" || !d.data || typeof d.data !== "object") continue;
+      if (d.kind === "fund_more") {
+        const m = d.data.move || {};
+        if (typeof d.data.fund_id === "string" && Number(m.amount) > 0) void addMove(d.data.fund_id, "more", Number(m.amount), m.note, m.date);
+        n++;
+        continue;
+      }
+      if (!isKind(d.kind)) continue;
+      const data = { ...d.data };
+      for (const k of ["fund_id", "paid_from", "settles"]) if (k in data) data[k] = real(data[k]) ?? null;
+      const rec = s.create(d.kind, data);
+      if (typeof d.ref === "string") made.set(d.ref, rec.id);
       n++;
     }
     if (n) toast.success(cmd.say || (n === 1 ? "Saved" : `Saved ${n} things`));
@@ -131,6 +147,7 @@ function ShellEffects() {
   const themeId = useSettings((s) => s.themeId);
   const motion = useSettings((s) => s.motion);
   const people = useRecords((s) => s.lists.person);
+  const openFunds = useFunds().open;
   useEffect(() => {
     startSync();
     startAlerts();
@@ -138,8 +155,14 @@ function ShellEffects() {
   }, []);
   // what the Quick capture window needs to know
   useEffect(() => {
-    bridge.quick.setContext({ currency, themeId, motion, people: people.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })) });
-  }, [currency, themeId, motion, people]);
+    bridge.quick.setContext({
+      currency,
+      themeId,
+      motion,
+      people: people.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })),
+      funds: openFunds.map((r) => ({ id: r.fund.id, from: r.fund.data.from, purpose: r.fund.data.purpose, left: r.summary.left })),
+    });
+  }, [currency, themeId, motion, people, openFunds]);
   // late to-dos on the dock / taskbar
   const late = badges.overdue.tone === "danger" ? badges.overdue.n : 0;
   useEffect(() => bridge.badge(late), [late]);

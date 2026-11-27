@@ -208,6 +208,7 @@ const TITLES: Record<string, string> = {
   money_totals: "Added up your money",
   my_overview: "Looked at your day",
   propose_changes: "Changes for you to save",
+  app_guide: "Looked up how the app works",
 };
 
 // what a step card says in one line, and what it shows in code type underneath
@@ -223,6 +224,7 @@ export function describeStep(s: Step): { title: string; code: string; why: strin
   if (s.tool === "find_records") return { title, code: [a.query ? `"${a.query}"` : "", (a.kinds || []).join(", ")].filter(Boolean).join(" in ") || "everything", why: "" };
   if (s.tool === "money_totals") return { title, code: [a.from, a.to].filter(Boolean).join(" to ") || "this month", why: "" };
   if (s.tool === "get_records" || s.tool === "my_overview") return { title, code: "", why: "" };
+  if (s.tool === "app_guide") return { title, code: a.topic ? `"${a.topic}"` : "", why: "" };
   if (s.tool === "propose_changes") return { title, code: "", why: a.why || "" };
   // a Claude session's card says its own title
   if (s.tool === "claude_task") return { title, code: s.claude ? "" : a.title || "", why: "" };

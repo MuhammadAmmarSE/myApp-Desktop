@@ -35,6 +35,8 @@ import {
   Gamepad2,
   Gift,
   type LucideIcon,
+  HandCoins,
+  Brain,
 } from "lucide-react";
 import { search, type Kind } from "@myapp/core";
 import { commands, GROUP_ORDER, GROUP_WORD, recordEntries, type Entry, type Open } from "@/lib/searchIndex";
@@ -74,6 +76,8 @@ const ICON: Record<string, LucideIcon> = {
   word: Languages,
   media: Gamepad2,
   wish: Gift,
+  fund: HandCoins,
+  memory: Brain,
 };
 
 export function runOpen(open: Open, opts: { shift?: boolean } = {}) {

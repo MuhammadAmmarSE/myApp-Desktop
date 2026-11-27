@@ -6,13 +6,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { ArrowRight, Bot, Check, CornerDownLeft, History, NotebookPen, PencilLine, RotateCcw, Sparkles, Undo2, X } from "lucide-react";
-import { actionToRecords, type Action, type PersonRef } from "@myapp/core";
+import { actionToRecords, saveActions, type Action, type PersonRef } from "@myapp/core";
 import { Button, Card, CardTitle, Chip, Empty, IconButton, Kbd, Page, Textarea, toast } from "@/components/ui";
 import { Orb, type OrbState } from "@/components/orb/Orb";
 import { useList, useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 import { edit, useUI, type EditKind } from "@/store/ui";
-import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, remember, sortOut } from "@/lib/capture";
+import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, remember, sortOut, whoseOf, type OpenFund } from "@/lib/capture";
+import { addMove, useFunds } from "@/lib/funds";
 import { navigate, useQuery } from "@/lib/router";
 import { doneWithNotes } from "@/lib/inbox";
 import { isMac, modKey } from "@/lib/bridge";
@@ -42,6 +43,9 @@ export default function Capture() {
   const peopleRecs = useList("person");
   const people: PersonRef[] = useMemo(() => peopleRecs.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })), [peopleRecs]);
   const history = readHistory(useRecords((s) => s.meta[HISTORY_KEY]));
+  // hisaabs still open: what you buy may go on one of them
+  const fundRows = useFunds().open;
+  const funds: OpenFund[] = useMemo(() => fundRows.map((r) => ({ id: r.fund.id, from: r.fund.data.from, purpose: r.fund.data.purpose, left: r.summary.left })), [fundRows]);
   const [text, setText] = useState(query.get("text") || "");
   // sent from notes (ones saved while the server was offline): once saved, those notes are done
   const [fromNotes] = useState(() => (query.get("notes") || "").split(",").filter(Boolean));
@@ -68,7 +72,10 @@ export default function Capture() {
   useEffect(() => () => void (typed.current && clearTimeout(typed.current)), []);
   const orb: OrbState = phase === "thinking" ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : writing ? "listening" : "idle";
   const chosen = keep.filter((k, i) => k && !moved[i]).length;
-  const cards = useMemo(() => actions.map((a) => describe(a, currency)), [actions, currency]);
+  const cards = useMemo(() => {
+    const whose = whoseOf(actions, keep, funds);
+    return actions.map((a) => describe(a, currency, whose));
+  }, [actions, keep, funds, currency]);
   const reviewing = phase === "review" || phase === "saved";
 
   const ask = async (input = text.trim()) => {
@@ -78,7 +85,7 @@ export default function Capture() {
     setError(null);
     useRecords.getState().setMeta(HISTORY_KEY, JSON.stringify(remember(history.map((h) => h.text), input).map((t) => ({ text: t, at: t === input ? Date.now() : history.find((h) => h.text === t)?.at || Date.now() }))));
     try {
-      const r = await sortOut(input, { currency, people });
+      const r = await sortOut(input, { currency, people, funds });
       setActions(r.actions);
       setKeep(r.actions.map(() => true));
       setMoved(r.actions.map(() => false));
@@ -113,15 +120,12 @@ export default function Capture() {
   const saveAll = () => {
     if (!chosen || phase !== "review") return;
     const s = useRecords.getState();
-    let n = 0;
-    const created: string[] = [];
-    actions.forEach((a, i) => {
-      if (!keep[i] || moved[i]) return;
-      for (const d of actionToRecords(a, { currency, people })) {
-        created.push(s.create(d.kind, d.data as never).id);
-        n++;
-      }
-    });
+    // the money given first, then what's bought with it (core's saveActions keeps that order)
+    const created = saveActions(
+      actions.filter((_, i) => keep[i] && !moved[i]),
+      { currency, people, create: (kind, data) => s.create(kind, data as never).id, addMore: (id, m) => void addMove(id, "more", m.amount, m.note, m.date) },
+    );
+    const n = created.length || actions.filter((a, i) => keep[i] && !moved[i] && a.type === "fund").length;
     setPhase("saved");
     const done = n && fromNotes.length ? doneWithNotes(fromNotes, created) : null;
     if (done?.removed) toast(`${n === 1 ? "Saved" : `Saved ${n} things`}, and the note${done.removed === 1 ? " is" : "s are"} done`, { action: { label: "Undo", run: done.undo } });

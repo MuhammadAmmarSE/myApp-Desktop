@@ -396,4 +396,133 @@ ok("timeline: a proposal and what you did with it", () => {
   assert.strictEqual(step.proposal.changes.length, 2);
   assert.deepStrictEqual(step.proposal.decided, { 0: { saved: true, recordId: "r9" }, 1: { saved: false, recordId: undefined } }, "a decision stands once made");
 });
+ok("guide: every kind of record belongs to a built feature; features are found by what you'd ask", () => {
+  for (const k of c.KINDS)
+    assert.ok(
+      c.FEATURES.some((f) => f.status === "built" && (f.kinds || []).includes(k)),
+      `no feature keeps ${k}: add it to guide.ts`,
+    );
+  for (const k of c.KINDS) assert.ok(c.KIND_SPECS[k], `${k} has no fields in assist.ts`);
+  const ids = c.FEATURES.map((f) => f.id);
+  assert.strictEqual(new Set(ids).size, ids.length, "feature ids are unique");
+  for (const f of c.FEATURES) assert.ok(f.name && f.what && f.where, `${f.id} says what it is and where`);
+  assert.strictEqual(c.guideFor("how do I log fuel").features[0].id, "car");
+  assert.strictEqual(c.guideFor("wishlist").features[0].id, "interests");
+  assert.strictEqual(c.guideFor("timer").features[0].id, "work");
+  assert.strictEqual(c.guideFor("zzqx").matched, false);
+  const brief = c.featuresInBrief();
+  assert.ok(brief.includes("- Work [project, client, work_log, server, domain]") && brief.includes("Coming next, not built yet: Health (medicines, weight, visits)"));
+  assert.ok(c.routesInGuide("phone").includes("/work/[id]") && c.routesInGuide("desktop").includes("/work/:id"));
+});
+ok("memory: a kind of its own, proposed and described like any record", () => {
+  const ch = c.cleanChange({ op: "create", kind: "memory", data: { text: "Works from home on Fridays", topic: "work" } }, { today: "2026-11-27", get: () => null });
+  assert.deepStrictEqual(ch.change.data, { text: "Works from home on Fridays", topic: "work" });
+  assert.deepStrictEqual(c.describeChange(ch.change), { verb: "New memory", title: "Works from home on Fridays", detail: "About work" });
+});
+ok("hisaab: what they gave, what you spent, left, over, settled, and the text to send", () => {
+  const fund = { id: "f1", data: { from: "Mother", purpose: "Groceries", amount: 5000, currency: "PKR", date: "2026-11-20", moves: [] } };
+  const items = [
+    { id: "i1", data: { name: "Milk", qty: "2 L", list: "grocery", mode: "store", today: true, done: true, money_id: "m1", fund_id: "f1" } },
+    { id: "i2", data: { name: "Eggs", list: "grocery", mode: "store", today: true, done: true, fund_id: "f1" } },
+    { id: "i3", data: { name: "Flour", list: "grocery", mode: "store", today: true, done: false, fund_id: "f1" } },
+    { id: "i4", data: { name: "Mine", list: "grocery", mode: "store", today: true, done: false } },
+  ];
+  const money = [
+    { id: "m1", data: { type: "expense", amount: 600, currency: "PKR", category: "Groceries", date: "2026-11-21", paid_from: "f1" } },
+    { id: "m2", data: { type: "expense", amount: 3400, currency: "PKR", category: "Groceries", note: "Rice and oil", date: "2026-11-22", paid_from: "f1" } },
+    { id: "m3", data: { type: "expense", amount: 900, currency: "PKR", category: "Food", date: "2026-11-22" } },
+  ];
+  let s = c.fundSummary(fund, money, items);
+  assert.deepStrictEqual([s.received, s.spent, s.left, s.state], [5000, 4000, 1000, "holding"]);
+  assert.deepStrictEqual([s.toBuy.map((i) => i.id), s.unpriced.map((i) => i.id), s.spends.map((m) => m.id)], [["i3"], ["i2"], ["m1", "m2"]]);
+  // your own spending leaves hers out
+  assert.strictEqual(c.monthSummary(money, "2026-11", "PKR").spent, 900);
+  assert.strictEqual(c.monthTotals(money, "2026-11", "PKR").spent, 900);
+  assert.deepStrictEqual(
+    c.ownMoney(money).map((m) => m.id),
+    ["m3"],
+  );
+  assert.strictEqual(c.fundStanding(fund, s, "PKR"), "Rs 1,000 left with you");
+  // she gives more, you spend over it
+  let data = c.withMove(fund, { type: "more", amount: 500, date: "2026-11-23" }, money, items);
+  assert.strictEqual(data.closed, false);
+  const over = money.concat([{ id: "m4", data: { type: "expense", amount: 1800, currency: "PKR", category: "Groceries", date: "2026-11-24", paid_from: "f1" } }]);
+  s = c.fundSummary({ id: "f1", data }, over, items);
+  assert.deepStrictEqual([s.received, s.spent, s.left, s.state], [5500, 5800, -300, "over"]);
+  assert.strictEqual(c.fundStanding({ data }, s, "PKR"), "Rs 300 over: Mother owes you");
+  // flour bought (no price): she pays you back the 300 and it's settled
+  const done = items.map((i) => (i.id === "i3" ? { id: "i3", data: Object.assign({}, i.data, { done: true }) } : i));
+  data = c.withMove({ id: "f1", data }, { type: "paid_back", amount: 300, date: "2026-11-25" }, over, done);
+  assert.deepStrictEqual([data.closed, data.closed_on], [true, "2026-11-25"]);
+  s = c.fundSummary({ id: "f1", data }, over, done);
+  const text = c.hisaabText({ id: "f1", data }, s, { currency: "PKR", today: "2026-11-27", items: done });
+  for (const line of ["Hisaab: Groceries, from Mother", "Received in all: Rs 5,500", "- Milk (2 L),", "- Rice and oil,", "Total spent: Rs 5,800", "Bought, price not noted yet: Eggs, Flour", "Spent over: Rs 300", "Paid back to me", "Settled."])
+    assert.ok(text.includes(line), `hisaab says "${line}":\n${text}`);
+  assert.ok(!text.includes("Still to buy"));
+  // keeping what's left is your income; covering the extra is your spending
+  assert.strictEqual(c.fundCategory({ data: { purpose: "groceries" } }), "Groceries");
+  assert.strictEqual(c.fundCategory({ data: { purpose: "Bills for the house" } }), "Bills & utilities");
+  assert.strictEqual(c.fundCategory({ data: { purpose: "Eid clothes" } }), "Family");
+});
+ok("capture: money given to spend, the items bought with it, and more money on a hisaab you have", () => {
+  const out = c.cleanActions(
+    [
+      { type: "fund", from: "Mother", amount: "5,000", purpose: "Groceries" },
+      { type: "item", name: "Milk", from_fund: "new" },
+      { type: "item", name: "Eggs", from_fund: "f9" },
+      { type: "money", money_type: "expense", amount: 300, category: "groceries", from_fund: "new" },
+      { type: "money", money_type: "income", amount: 300, from_fund: "new" },
+      { type: "fund", from: "Father", amount: 1000, adds_to: "f1" },
+      { type: "fund", from: "", amount: 10 },
+    ],
+    { today: "2026-11-27", funds: ["f1"] },
+  );
+  assert.deepStrictEqual(
+    out.map((a) => [a.type, a.from_fund || a.adds_to || ""]),
+    [
+      ["fund", ""],
+      ["item", "new"],
+      ["item", ""],
+      ["money", "new"],
+      ["money", ""],
+      ["fund", "f1"],
+    ],
+  );
+  assert.strictEqual(out[0].amount, 5000);
+  // two new hisaabs in one capture: "new" points at neither
+  const two = c.cleanActions(
+    [
+      { type: "fund", from: "A", amount: 1 },
+      { type: "fund", from: "B", amount: 1 },
+      { type: "item", name: "x", from_fund: "new" },
+    ],
+    { today: "2026-11-27" },
+  );
+  assert.strictEqual(two[2].from_fund, undefined);
+  const people = [{ id: "p1", name: "Ammi", relation: "parent" }];
+  const fundOf = (ref) => (ref === "new" ? "fNEW" : ref);
+  assert.deepStrictEqual(c.actionToRecords(out[0], { currency: "PKR", people, fundOf })[0].data.person_id, "p1");
+  assert.strictEqual(c.actionToRecords(out[1], { currency: "PKR", people, fundOf })[0].data.fund_id, "fNEW");
+  assert.strictEqual(c.actionToRecords(out[3], { currency: "PKR", people, fundOf })[0].data.paid_from, "fNEW");
+  assert.deepStrictEqual(c.actionToRecords(out[5], { currency: "PKR", people, fundOf }), []);
+  assert.deepStrictEqual(c.fundMoveOf(out[5]), { type: "more", amount: 1000, date: "2026-11-27", note: undefined });
+  // saved in order: the new hisaab first, what was bought with it pointing at it, more money on an old one
+  const made = [];
+  const moves = [];
+  let n = 0;
+  const ids = c.saveActions(out, { currency: "PKR", people, create: (kind, data) => (made.push({ kind, data }), `r${++n}`), addMore: (id, move) => moves.push([id, move.amount]) });
+  assert.deepStrictEqual(
+    made.map((m) => m.kind),
+    ["fund", "item", "item", "money", "money"],
+  );
+  assert.deepStrictEqual([made[1].data.fund_id, made[2].data.fund_id, made[3].data.paid_from, made[4].data.paid_from], ["r1", undefined, "r1", undefined]);
+  assert.deepStrictEqual(moves, [["f1", 1000]]);
+  assert.strictEqual(ids.length, 5);
+  // the assistant: a new hisaab, and money spent out of one
+  const get = (id) => (id === "f1" ? { kind: "fund", data: { from: "Mother", purpose: "Groceries", amount: 5000, date: "2026-11-20" } } : null);
+  const f = c.cleanChange({ op: "create", kind: "fund", data: { from: "Mother", amount: 2000, purpose: "Medicine" } }, { today: "2026-11-27", get });
+  assert.deepStrictEqual(c.describeChange(f.change, { currency: "PKR" }).title, "Medicine · from Mother");
+  assert.ok(c.cleanChange({ op: "create", kind: "money", data: { amount: 100, paid_from: "f1" } }, { today: "2026-11-27", get }).change);
+  assert.ok(c.cleanChange({ op: "create", kind: "money", data: { amount: 100, paid_from: "f2" } }, { today: "2026-11-27", get }).error.includes("no fund"));
+});
 console.log(`core: ${n} checks passed`);

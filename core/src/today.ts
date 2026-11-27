@@ -75,7 +75,7 @@ export function moneyPace(money: Rec<"money">[], today: string, currency: string
   let now = 0;
   let before = 0;
   for (const r of money) {
-    if (r.data.type === "income" || (r.data.currency || currency) !== currency) continue;
+    if (r.data.paid_from || r.data.type === "income" || (r.data.currency || currency) !== currency) continue;
     if (r.data.date.slice(0, 7) === today.slice(0, 7) && r.data.date <= today) now += r.data.amount;
     else if (r.data.date.slice(0, 7) === prev && r.data.date <= cutPrev) before += r.data.amount;
   }

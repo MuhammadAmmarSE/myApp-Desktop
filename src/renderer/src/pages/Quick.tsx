@@ -6,12 +6,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { ArrowRight, Check, CornerDownLeft, ExternalLink, NotebookPen, RotateCcw, Sparkles, X } from "lucide-react";
-import { actionToRecords, type Action, type PersonRef, type Relation } from "@myapp/core";
-import type { QuickContext } from "@shared/ipc";
+import { saveActions, type Action, type PersonRef, type Relation } from "@myapp/core";
+import type { Draft, QuickContext } from "@shared/ipc";
 import { Button, Kbd, Spin } from "@/components/ui";
 import { Orb, type OrbState } from "@/components/orb/Orb";
 import { applyTheme } from "@/theme";
-import { ACTION_AREA, ACTION_ICON, describe, sortOut } from "@/lib/capture";
+import { ACTION_AREA, ACTION_ICON, describe, sortOut, whoseOf } from "@/lib/capture";
 import { ApiError } from "@/lib/api";
 import { bridge, isMac } from "@/lib/bridge";
 
@@ -30,6 +30,7 @@ export default function Quick() {
 
   const people: PersonRef[] = useMemo(() => (ctx?.people || []).map((p) => ({ id: p.id, name: p.name, relation: p.relation as Relation })), [ctx]);
   const currency = ctx?.currency || "PKR";
+  const funds = useMemo(() => ctx?.funds || [], [ctx]);
 
   const reset = () => {
     setText("");
@@ -69,7 +70,7 @@ export default function Quick() {
     setPhase("thinking");
     setError("");
     try {
-      const r = await sortOut(t, { currency, people });
+      const r = await sortOut(t, { currency, people, funds });
       setActions(r.actions);
       setKeep(r.actions.map(() => true));
       setReply(r.reply);
@@ -83,7 +84,22 @@ export default function Quick() {
   };
 
   const save = async () => {
-    const drafts = actions.flatMap((a, i) => (keep[i] ? actionToRecords(a, { currency, people }) : []));
+    // the main window makes the records: a new hisaab goes first, and what's bought with it points
+    // at it by a stand-in (ref) the main window swaps for the real id
+    const drafts: Draft[] = [];
+    saveActions(
+      actions.filter((_, i) => keep[i]),
+      {
+        currency,
+        people,
+        create: (kind, data) => {
+          const ref = `new:${drafts.length}`;
+          drafts.push({ kind, data, ref });
+          return ref;
+        },
+        addMore: (fund_id, move) => drafts.push({ kind: "fund_more", data: { fund_id, move } }),
+      },
+    );
     if (!drafts.length) return;
     const ok = await bridge.quick.save(drafts, drafts.length === 1 ? "Saved from Quick capture" : `Saved ${drafts.length} things from Quick capture`);
     if (!ok) return setError("Open Redline first, then try again.");
@@ -184,7 +200,7 @@ export default function Quick() {
                     {reply && <p className="selectable rounded-[11px] bg-accent-soft/60 px-3 py-2 text-[13px]">{reply}</p>}
                     {summary && actions.length > 0 && <div className="px-1 text-[12px] text-text2">{summary}</div>}
                     {actions.map((a, i) => {
-                      const d = describe(a, currency);
+                      const d = describe(a, currency, whoseOf(actions, keep, funds));
                       const Icon = ACTION_ICON[a.type];
                       const on = keep[i];
                       return (

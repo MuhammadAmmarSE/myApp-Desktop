@@ -215,7 +215,19 @@ export function registerIpc() {
   ipcMain.on(CH.quickClose, () => hideQuick());
   ipcMain.handle(CH.quickContext, () => quickContext);
   ipcMain.on(CH.quickSetContext, (_e, ctx: QuickContext) => {
-    if (ctx && typeof ctx === "object") quickContext = { currency: String(ctx.currency || ""), themeId: String(ctx.themeId || ""), motion: ctx.motion === "reduced" ? "reduced" : "full", people: Array.isArray(ctx.people) ? ctx.people.slice(0, 500) : [] };
+    if (ctx && typeof ctx === "object")
+      quickContext = {
+        currency: String(ctx.currency || ""),
+        themeId: String(ctx.themeId || ""),
+        motion: ctx.motion === "reduced" ? "reduced" : "full",
+        people: Array.isArray(ctx.people) ? ctx.people.slice(0, 500) : [],
+        funds: Array.isArray(ctx.funds)
+          ? ctx.funds
+              .filter((f) => f && typeof f.id === "string")
+              .slice(0, 20)
+              .map((f) => ({ id: f.id.slice(0, 64), from: String(f.from || "").slice(0, 60), purpose: String(f.purpose || "").slice(0, 60), left: Number(f.left) || 0 }))
+          : [],
+      };
   });
   // the quick window doesn't keep records: what it saves is made by the main window
   ipcMain.handle(CH.quickSave, (_e, drafts: Draft[], say: string) => {

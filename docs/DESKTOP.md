@@ -102,6 +102,23 @@ Saving and removing that touches other records goes through `lib/` with Undo: a 
 income in Money (`lib/work.ts`), a wish got into Money and My things (`lib/interests.ts`), a
 project removed with its log.
 
+## Money given to you to spend (`pages/Fund.tsx`, `lib/funds.ts`, core's `funds.ts`)
+
+The same as the phone's (myApp's docs/ARCHITECTURE.md has the whole of it): a `fund` record, what
+you buy with it as money with `paid_from`, list items with `fund_id`, and the steps that settle it.
+Money lists only your own entries (`ownMoney`) and the hisaabs apart; the item editor asks the
+price when one on a hisaab is ticked (`preset.buying`) and has "Whose money"; the money editor, opened
+with `paid_from`, is a purchase on the hisaab. Capture and Quick capture send the open hisaabs to
+the server; Quick capture's window doesn't keep records, so it sends drafts with stand-in ids
+(`ref`) that the main window swaps for the real ones as it makes them, and "they gave more" as a
+`fund_more` draft (App.tsx `handleCommand`).
+
+## The assistant's guide
+
+Every page in `App.tsx`'s `ROUTES` must be in core's `guide.ts` (the feature it belongs to), and
+every page the guide names must exist: `test/unit/guide.test.ts` fails otherwise. That's how the
+assistant knows the whole app, including what's added later.
+
 ## Files on this computer
 
 In the app's data folder (`%APPDATA%/Redline`, `~/.config/Redline`,

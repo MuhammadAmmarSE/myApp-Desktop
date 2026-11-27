@@ -7,6 +7,10 @@ import type { MoneyData } from "./kinds";
 
 type Money = { id?: string; data: MoneyData };
 
+// what was spent out of money someone gave you to spend isn't your own spending: their hisaab
+// has it (funds.ts), your totals don't
+const own = (m: Money) => !m.data.paid_from;
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 // The month before "2026-01" is "2025-12".
@@ -47,7 +51,7 @@ export function monthSummary(money: Money[], month: string, currency: string) {
   let count = 0;
   const byCat = new Map<string, number>();
   for (const m of money) {
-    if (m.data.date.slice(0, 7) !== month || (m.data.currency || currency) !== currency) continue;
+    if (!own(m) || m.data.date.slice(0, 7) !== month || (m.data.currency || currency) !== currency) continue;
     count++;
     if (m.data.type === "income") earned += m.data.amount;
     else {
@@ -86,7 +90,7 @@ export function dailyPace(money: Money[], today: string, currency: string) {
 // The biggest single expenses of a month, biggest first.
 export function topExpenses(money: Money[], month: string, currency: string, n = 5) {
   return money
-    .filter((m) => m.data.type === "expense" && m.data.date.slice(0, 7) === month && (m.data.currency || currency) === currency)
+    .filter((m) => own(m) && m.data.type === "expense" && m.data.date.slice(0, 7) === month && (m.data.currency || currency) === currency)
     .sort((a, b) => b.data.amount - a.data.amount || b.data.date.localeCompare(a.data.date))
     .slice(0, n);
 }
@@ -95,7 +99,7 @@ export function topExpenses(money: Money[], month: string, currency: string, n =
 export function dueSoon(money: Money[], today: string, currency: string, days = 7) {
   const out: { date: string; amount: number; category: string; note: string; id?: string }[] = [];
   for (const m of money) {
-    if (m.data.type !== "expense" || (m.data.currency || currency) !== currency) continue;
+    if (!own(m) || m.data.type !== "expense" || (m.data.currency || currency) !== currency) continue;
     const next = nextRecurring(m.data.date, m.data.recurring, today);
     if (!next) continue;
     const left = daysBetween(today, next);
@@ -120,7 +124,7 @@ export function monthCompare(money: Money[], today: string, currency: string) {
   let now = 0;
   let before = 0;
   for (const r of money) {
-    if (r.data.type === "income" || (r.data.currency || currency) !== currency) continue;
+    if (!own(r) || r.data.type === "income" || (r.data.currency || currency) !== currency) continue;
     if (r.data.date.slice(0, 7) === month && r.data.date <= today) now += r.data.amount;
     else if (r.data.date.slice(0, 7) === prev && r.data.date <= cut) before += r.data.amount;
   }

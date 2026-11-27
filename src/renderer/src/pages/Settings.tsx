@@ -5,7 +5,35 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { Bell, Bot, Check, CircleAlert, CircleCheck, Cloud, Database, Download, Gauge, HardDriveDownload, Info, Keyboard, Laptop, LogOut, Monitor, Moon, Palette, Power, RefreshCw, ShieldCheck, Smartphone, Sparkles, Sun, Upload, User as UserIcon, type LucideIcon } from "lucide-react";
+import {
+  Bell,
+  Bot,
+  Brain,
+  Check,
+  CircleAlert,
+  CircleCheck,
+  Cloud,
+  Database,
+  Download,
+  Gauge,
+  HardDriveDownload,
+  Info,
+  Keyboard,
+  Laptop,
+  LogOut,
+  Monitor,
+  Moon,
+  Palette,
+  Power,
+  RefreshCw,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Sun,
+  Upload,
+  User as UserIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
 import type { AppInfo, Prefs } from "@shared/ipc";
 import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
@@ -15,7 +43,7 @@ import { useSettings, type Background } from "@/store/settings";
 import { useAuth } from "@/store/auth";
 import { useOperator, type Connection } from "@/store/operator";
 import { syncNow, useSync } from "@/store/sync";
-import { useRecords } from "@/store/records";
+import { useList, useRecords } from "@/store/records";
 import { useUI } from "@/store/ui";
 import { api } from "@/lib/api";
 import { bridge, isMac } from "@/lib/bridge";
@@ -26,13 +54,14 @@ import { setQuery, useQuery } from "@/lib/router";
 import { ago, plural } from "@/lib/format";
 import { rise } from "@/theme/motion";
 
-type SectionId = "appearance" | "you" | "reminders" | "startup" | "assistant" | "account" | "data" | "about";
+type SectionId = "appearance" | "you" | "reminders" | "startup" | "assistant" | "memory" | "account" | "data" | "about";
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "you", label: "You", icon: UserIcon },
   { id: "reminders", label: "Reminders", icon: Bell },
   { id: "startup", label: "Startup & shortcut", icon: Power },
   { id: "assistant", label: "Assistant", icon: Bot },
+  { id: "memory", label: "What it remembers", icon: Brain },
   { id: "account", label: "Account & devices", icon: ShieldCheck },
   { id: "data", label: "Your data", icon: Database },
   { id: "about", label: "About", icon: Info },
@@ -80,6 +109,7 @@ export default function Settings() {
               {section === "reminders" && <Reminders />}
               {section === "startup" && <Startup />}
               {section === "assistant" && <AssistantSettings />}
+              {section === "memory" && <Memory />}
               {section === "account" && <Account />}
               {section === "data" && <Data />}
               {section === "about" && <About />}
@@ -342,6 +372,78 @@ const CONN: { key: "server" | "deepseek" | "github" | "godaddy" | "claude" | "fi
   { key: "firebase", label: "Firebase", what: "Hosting and projects" },
   { key: "godaddy", label: "DNS", what: "Domain records (GoDaddy)" },
 ];
+// what the assistant keeps in mind about you: it proposes these in a chat (kept only if you save
+// them); here you read them, add your own, change one, or forget it
+function Memory() {
+  const all = useList("memory");
+  const list = useMemo(() => all.slice().sort((a, b) => b.updated_at - a.updated_at), [all]);
+  const [text, setText] = useState("");
+  const [topic, setTopic] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    if (!text.trim()) return;
+    useRecords.getState().create("memory", { text: text.trim(), topic: topic.trim() || undefined });
+    setText("");
+    setTopic("");
+    toast.success("It will keep that in mind");
+  };
+  const save = (id: string) => {
+    if (draft.trim()) useRecords.getState().update<"memory">(id, { text: draft.trim() });
+    setEditing(null);
+  };
+  const forget = (id: string) => {
+    const rec = useRecords.getState().byId[id];
+    if (!rec) return;
+    useRecords.getState().remove(id);
+    toast.undo("Forgotten", () => useRecords.getState().restore(rec));
+  };
+  return (
+    <>
+      <Title title="What it remembers" sub="The assistant keeps these in mind when it answers you. Tell it about yourself in a chat and it offers to remember; or add something here." />
+      <Card className="mb-5" data-testid="memory-add">
+        <div className="flex flex-col gap-2.5">
+          <Input value={text} onChange={setText} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="e.g. I work from home on Fridays" aria-label="Something to remember" />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Input value={topic} onChange={setTopic} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="About: work, family, food… (optional)" aria-label="About" />
+            </div>
+            <Button variant="primary" onClick={add} disabled={!text.trim()}>
+              Remember
+            </Button>
+          </div>
+        </div>
+      </Card>
+      {list.length ? (
+        <Card>
+          {list.map((m) => (
+            <div key={m.id} className="group flex items-center gap-3 border-b border-line py-3 last:border-0" data-memory={m.id}>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-surface2 text-text2 hairline">
+                <Brain size={16} />
+              </span>
+              <div className="min-w-0 flex-1">
+                {editing === m.id ? (
+                  <Input value={draft} onChange={setDraft} autoFocus onKeyDown={(e) => (e.key === "Enter" ? save(m.id) : e.key === "Escape" ? setEditing(null) : undefined)} onBlur={() => save(m.id)} aria-label="What it remembers" />
+                ) : (
+                  <button type="button" className="block w-full text-left" onClick={() => (setEditing(m.id), setDraft(m.data.text))}>
+                    <div className="text-[13.5px]">{m.data.text}</div>
+                    {m.data.topic && <div className="text-[12px] text-text3">About {m.data.topic}</div>}
+                  </button>
+                )}
+              </div>
+              <Button size="xs" variant="ghost" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={() => forget(m.id)}>
+                Forget
+              </Button>
+            </div>
+          ))}
+        </Card>
+      ) : (
+        <div className="text-[13px] text-text3">Nothing yet.</div>
+      )}
+    </>
+  );
+}
+
 function AssistantSettings() {
   const op = useOperator();
   const readAloud = useSettings((s) => s.readAloud);

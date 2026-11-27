@@ -3,7 +3,29 @@
 import { create } from "zustand";
 import type { Rec } from "@myapp/core";
 
-export type EditKind = "todo" | "item" | "money" | "event" | "reminder" | "clip" | "date" | "person" | "thing" | "car" | "car_log" | "project" | "client" | "work_log" | "server" | "domain" | "interest" | "practice" | "word" | "media" | "wish";
+export type EditKind =
+  | "todo"
+  | "item"
+  | "money"
+  | "event"
+  | "reminder"
+  | "clip"
+  | "date"
+  | "person"
+  | "thing"
+  | "car"
+  | "car_log"
+  | "project"
+  | "client"
+  | "work_log"
+  | "server"
+  | "domain"
+  | "interest"
+  | "practice"
+  | "word"
+  | "media"
+  | "wish"
+  | "fund";
 export type Editing = { kind: EditKind; rec?: Rec | null; preset?: Record<string, any>; n: number };
 
 type UI = {

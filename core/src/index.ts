@@ -13,3 +13,5 @@ export * from "./format";
 export * from "./derive";
 export * from "./operator";
 export * from "./assist";
+export * from "./guide";
+export * from "./funds";

@@ -93,9 +93,13 @@ export interface QuickContext {
   themeId: string;
   motion: "full" | "reduced";
   people: { id: string; name: string; relation: string }[];
+  // hisaabs still open (money someone gave you to spend)
+  funds: { id: string; from: string; purpose: string; left: number }[];
 }
 
-export type Draft = { kind: string; data: any };
+// a record for the main window to make. ref: a stand-in id other drafts in the same batch may point
+// at (fund_id, paid_from); kind "fund_more" adds money to a hisaab you have: data { fund_id, move }
+export type Draft = { kind: string; data: any; ref?: string };
 
 // a command from the tray, the menu, a notification or the quick window, for the main window
 export type Command =

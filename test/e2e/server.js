@@ -75,6 +75,20 @@ function captureTurn(body) {
   const user = (body.messages || []).filter((m) => m.role === "user").pop();
   const text = String((user && user.content) || "");
   if (/what can you do/i.test(text)) return { summary: "", reply: "I keep your to-dos, lists, plans, money and dates.", assistant: false, actions: [] };
+  // "Mother gave me 5000 for groceries: atta and eggs": her money, with what to buy with it
+  const given = text.match(/(\w+) gave me (\d+) for (\w+)(?::\s*(.+))?/i);
+  if (given)
+    return {
+      summary: `${given[1]}'s money for ${given[3]}.`,
+      actions: [
+        { type: "fund", from: given[1], amount: Number(given[2]), purpose: given[3][0].toUpperCase() + given[3].slice(1) },
+        ...String(given[4] || "")
+          .split(/,| and /)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .map((name) => ({ type: "item", name: name[0].toUpperCase() + name.slice(1), list: "grocery", mode: "store", today: true, from_fund: "new" })),
+      ],
+    };
   if (/various load/i.test(text)) return { summary: "What you paid.", actions: [{ type: "money", money_type: "expense", amount: 30000, category: "Other", note: "Paid to various load", date: day(0) }] };
   return {
     summary: "Two things to buy today, a reminder and what you paid.",

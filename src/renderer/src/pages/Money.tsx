@@ -2,11 +2,12 @@
 // out, the pace against last month, where it went by category, monthly bills still to note, and
 // every entry in a table you can search, filter and sort. ← → change the month; click a category
 // to see only it; Export CSV saves what's shown.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowDownLeft, ArrowUpRight, CalendarRange, ChevronLeft, ChevronRight, Copy, Download, Filter, Gauge, Pencil, PiggyBank, Plus, Receipt, Repeat, Search, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
-import { isoDate, monthTotals, type Rec } from "@myapp/core";
+import { ArrowDownLeft, ArrowUpRight, CalendarRange, ChevronLeft, ChevronRight, Copy, Download, Filter, Gauge, HandCoins, Pencil, PiggyBank, Plus, Receipt, Repeat, Search, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { fundStanding, isoDate, monthTotals, ownMoney, type Rec } from "@myapp/core";
+import { useFunds } from "@/lib/funds";
 import { Button, Card, CardTitle, Empty, IconButton, Input, Segmented, Stat, Tag, toast, useContextMenu } from "@/components/ui";
 import { BarList, ColumnChart, Legend, LineChart } from "@/components/charts";
 import { useList, useRecords } from "@/store/records";
@@ -16,7 +17,7 @@ import { billDay, byCategory, daysIn, monthlyBills, monthTitle, perDay, perMonth
 import { exportMoneyCsv } from "@/lib/exporter";
 import { usePageKeys } from "@/lib/keys";
 import { useListNav } from "@/lib/listNav";
-import { setQuery, useQuery } from "@/lib/router";
+import { navigate, setQuery, useQuery } from "@/lib/router";
 import { compact, dayWord, money, MONTHS_SHORT, ordinal } from "@/lib/format";
 import { rise } from "@/theme/motion";
 
@@ -28,7 +29,18 @@ const notedOn = (w: string) => (/^(today|yesterday|tomorrow)$/i.test(w) ? `Noted
 
 export default function Money() {
   const q = useQuery();
-  const all = useList("money");
+  // your own money: what you spent out of someone else's is on their hisaab
+  const everything = useList("money");
+  const all = useMemo(() => ownMoney(everything), [everything]);
+  const funds = useFunds();
+  const [showSettled, setShowSettled] = useState(false);
+  // opened to start a hisaab (Search: "Someone gave me money to spend")
+  const addFund = q.get("add") === "fund";
+  useEffect(() => {
+    if (!addFund) return;
+    setQuery({ add: null });
+    edit("fund");
+  }, [addFund]);
   const currency = useSettings((s) => s.currency);
   const view = useSettings((s) => s.moneyView);
   const set = useSettings((s) => s.set);
@@ -49,9 +61,9 @@ export default function Money() {
   const step = (n: number) => go(view === "year" ? `${year + n}-${month.slice(5)}` : shiftMonth(month, n));
   usePageKeys(
     (e) => {
-      if (e.key === "ArrowLeft") return step(-1), true;
-      if (e.key === "ArrowRight") return step(1), true;
-      if (e.key.toLowerCase() === "t") return go(thisMonth), true;
+      if (e.key === "ArrowLeft") return (step(-1), true);
+      if (e.key === "ArrowRight") return (step(1), true);
+      if (e.key.toLowerCase() === "t") return (go(thisMonth), true);
     },
     [month, view],
   );
@@ -64,12 +76,18 @@ export default function Money() {
     const earned = ms.reduce((n, m) => n + m.earned, 0);
     return { spent, earned, net: earned - spent, categories: [] as [string, number][] };
   }, [all, month, year, view, currency]);
-  const prev = useMemo(() => (view === "month" ? monthTotals(all, shiftMonth(month, -1), currency) : (() => {
-    const ms = perMonth(all, year - 1, currency);
-    const spent = ms.reduce((n, m) => n + m.spent, 0);
-    const earned = ms.reduce((n, m) => n + m.earned, 0);
-    return { spent, earned, net: earned - spent, categories: [] };
-  })()), [all, month, year, view, currency]);
+  const prev = useMemo(
+    () =>
+      view === "month"
+        ? monthTotals(all, shiftMonth(month, -1), currency)
+        : (() => {
+            const ms = perMonth(all, year - 1, currency);
+            const spent = ms.reduce((n, m) => n + m.spent, 0);
+            const earned = ms.reduce((n, m) => n + m.earned, 0);
+            return { spent, earned, net: earned - spent, categories: [] };
+          })(),
+    [all, month, year, view, currency],
+  );
 
   // the pace: this month so far against last month by the same day
   const isNow = view === "month" && month === thisMonth;
@@ -180,7 +198,22 @@ export default function Money() {
             </Card>
           </motion.div>
           <motion.div {...rise(2)}>
-            <Stat label="Spent" icon={ArrowUpRight} tone="var(--viz-1)" value={totals.spent} format={fmt} sub={spentChange == null ? "Nothing to compare with" : <span className={spentChange > 0 ? "text-warn" : "text-success"}>{spentChange > 0 ? "▲" : "▼"} {Math.abs(spentChange)}% on {view === "year" ? "last year" : "last month"}</span>} />
+            <Stat
+              label="Spent"
+              icon={ArrowUpRight}
+              tone="var(--viz-1)"
+              value={totals.spent}
+              format={fmt}
+              sub={
+                spentChange == null ? (
+                  "Nothing to compare with"
+                ) : (
+                  <span className={spentChange > 0 ? "text-warn" : "text-success"}>
+                    {spentChange > 0 ? "▲" : "▼"} {Math.abs(spentChange)}% on {view === "year" ? "last year" : "last month"}
+                  </span>
+                )
+              }
+            />
           </motion.div>
           <motion.div {...rise(3)}>
             <Stat label="Came in" icon={ArrowDownLeft} tone="var(--viz-2)" value={totals.earned} format={fmt} sub={prev.earned ? `${fmt(prev.earned)} ${view === "year" ? "last year" : "last month"}` : undefined} />
@@ -193,7 +226,15 @@ export default function Money() {
                 tone={pace != null && pace > 0.05 ? "var(--c-warn)" : "var(--c-success)"}
                 value={heading || 0}
                 format={(n) => `≈ ${fmt(n)}`}
-                sub={pace == null ? "Heading for, at this rate" : <span className={pace > 0.05 ? "text-warn" : "text-success"}>{pace > 0 ? "Ahead of" : "Behind"} last month by {Math.abs(Math.round(pace * 100))}%</span>}
+                sub={
+                  pace == null ? (
+                    "Heading for, at this rate"
+                  ) : (
+                    <span className={pace > 0.05 ? "text-warn" : "text-success"}>
+                      {pace > 0 ? "Ahead of" : "Behind"} last month by {Math.abs(Math.round(pace * 100))}%
+                    </span>
+                  )
+                }
               />
             ) : (
               <Stat label="Entries" icon={Receipt} value={all.filter(inPeriod).length} sub={view === "year" ? `In ${year}` : `In ${monthTitle(month)}`} />
@@ -346,6 +387,48 @@ export default function Money() {
           </div>
 
           <div className="flex min-w-0 flex-col gap-5">
+            {/* money someone gave you to spend: never your own, kept apart */}
+            <motion.div {...rise(6)}>
+              <Card data-testid="held-for-others">
+                <CardTitle
+                  title="Held for others"
+                  icon={HandCoins}
+                  sub={funds.open.length ? `${funds.open.length} open` : "Money someone gave you to spend"}
+                  action={
+                    funds.settled.length ? (
+                      <Button size="xs" variant="ghost" onClick={() => setShowSettled(!showSettled)}>
+                        {showSettled ? "Hide settled" : `Settled (${funds.settled.length})`}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+                <div className="-mx-2 flex flex-col">
+                  {[...funds.open, ...(showSettled ? funds.settled : [])].map(({ fund: f, summary: s }) => (
+                    <button key={f.id} type="button" onClick={() => navigate(`/funds/${f.id}`)} className="flex items-center gap-3 rounded-[10px] px-2 py-2 text-left hover:bg-hover" data-fund={f.id}>
+                      <span
+                        className={clsx(
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-[9px]",
+                          f.data.closed ? "bg-surface2 text-text3 hairline" : s.state === "over" ? "bg-[color-mix(in_srgb,var(--c-warn)_15%,transparent)] text-warn" : "bg-accent-soft text-accent-text",
+                        )}
+                      >
+                        <HandCoins size={15} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px]">
+                          {f.data.purpose || "Money"} · from {f.data.from}
+                        </span>
+                        <span className="block truncate text-[11.5px] text-text3">{[fundStanding(f, s, currency), s.toBuy.length ? `${s.toBuy.length} to buy` : ""].filter(Boolean).join(" · ")}</span>
+                      </span>
+                      {!f.data.closed && <span className={clsx("text-[13px] font-medium tnum", s.state === "over" && "text-danger")}>{(s.state === "over" ? "−" : "") + money(Math.abs(s.left), f.data.currency || currency)}</span>}
+                    </button>
+                  ))}
+                </div>
+                <Button size="sm" variant="ghost" icon={Plus} className="mt-1" onClick={() => edit("fund")}>
+                  Someone gave me money to spend
+                </Button>
+              </Card>
+            </motion.div>
+
             {/* where it went */}
             <motion.div {...rise(6)}>
               <Card>

@@ -116,6 +116,11 @@ export function ItemRow({ i, onToggle, active, selected, index = 0, onClick, dra
   const ctx = useContextMenu();
   const currency = useSettings((s) => s.currency);
   const d = i.data;
+  // bought with someone else's money: whose
+  const whose = useRecords((s) => {
+    const f = d.fund_id ? (s.byId[d.fund_id] as Rec<"fund"> | undefined) : undefined;
+    return f && !f.deleted ? f.data.from : "";
+  });
   return (
     <motion.div
       layout="position"
@@ -157,6 +162,7 @@ export function ItemRow({ i, onToggle, active, selected, index = 0, onClick, dra
           <ExternalLink size={14} />
         </button>
       )}
+      {whose && <Tag tone="accent">{whose}&apos;s money</Tag>}
       {d.regular && <Tag>Regular</Tag>}
     </motion.div>
   );

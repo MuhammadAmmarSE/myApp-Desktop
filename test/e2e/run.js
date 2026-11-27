@@ -310,6 +310,85 @@ async function scenario(name, fn, always = false) {
     await until("apples bought", async () => (await live("item")).find((r) => r.data.name === "Apples" && r.data.done));
   });
 
+  await scenario("hisaab: Mother's money from Capture, bought from the list and the page, she pays back the extra, and it stays out of my spending", async () => {
+    await go("/capture");
+    await win.getByLabel("What to capture").fill("Mother gave me 5000 for groceries: atta and eggs");
+    await win.keyboard.press("Control+Enter");
+    await win.getByTestId("review").waitFor({ timeout: 15000 });
+    await win.getByTestId("review").getByText("Hisaab").first().waitFor();
+    await win
+      .getByTestId("review")
+      .getByText(/with Mother's money/)
+      .first()
+      .waitFor();
+    await win.getByTestId("save-all").click();
+    const fund = await until("the hisaab on the server", async () => (await live("fund")).find((r) => r.data.from === "Mother" && r.data.amount === 5000));
+    await until("both items on it", async () => (await live("item")).filter((r) => r.data.fund_id === fund.id).length === 2);
+    // ticking Atta asks what it cost; it goes on her hisaab
+    await go("/lists");
+    const row = win.locator("[data-item]").filter({ hasText: "Atta" }).first();
+    await row.getByText("Mother's money").waitFor();
+    await row.getByRole("checkbox").first().click();
+    await dialog().getByText("Bought Atta?").waitFor();
+    await dialog().getByLabel("Price paid").fill("1800");
+    await saveDialog();
+    await until("Atta's cost on the hisaab", async () => (await live("money")).find((r) => r.data.paid_from === fund.id && r.data.amount === 1800));
+    // Money lists it apart, not among my own entries
+    await go("/money");
+    await win
+      .getByTestId("held-for-others")
+      .getByText(/3,200 left with you/)
+      .waitFor();
+    if (
+      await win
+        .getByTestId("money-rows")
+        .getByText("Atta")
+        .count()
+        .catch(() => 0)
+    )
+      throw new Error("her money is listed as mine");
+    await win.getByTestId("held-for-others").getByText("Groceries · from Mother").click();
+    await win.getByTestId("fund").waitFor();
+    // a purchase on the page takes it over: she owes me 300
+    await win.getByTestId("add-purchase").click();
+    await dialog().getByLabel("Amount").fill("3000");
+    await field("What you bought").fill("Rice and oil");
+    await dialog().getByRole("button", { name: "Groceries", exact: true }).click();
+    await saveDialog();
+    await win.getByTestId("fund-standing").getByText("Rs 200", { exact: true }).waitFor();
+    // the eggs, bought from the page with their price: over by 300
+    await win.locator("[data-tobuy]").filter({ hasText: "Eggs" }).getByRole("button", { name: "Bought" }).click();
+    await dialog().getByLabel("Price paid").fill("500");
+    await saveDialog();
+    await win
+      .getByTestId("fund-standing")
+      .getByText(/Mother owes you/)
+      .waitFor();
+    await win.getByRole("button", { name: "They paid you back" }).click();
+    await dialog().getByRole("button", { name: "Paid back" }).click();
+    await until("settled on the server", async () => (await live("fund")).find((r) => r.id === fund.id && r.data.closed && (r.data.moves || []).some((m) => m.type === "paid_back" && m.amount === 300)));
+    await win.getByTestId("fund-standing").getByText("Settled", { exact: true }).waitFor();
+    // the hisaab to send her
+    await win.getByTestId("copy-hisaab").click();
+    const text = await until("the hisaab copied", async () => {
+      const t = await app.evaluate(({ clipboard }) => clipboard.readText());
+      return /Hisaab: Groceries, from Mother/.test(t) && t;
+    });
+    for (const line of ["Atta", "Rice and oil", "Eggs", "Total spent: Rs 5,300", "Spent over: Rs 300", "Paid back to me", "Settled."]) if (!text.includes(line)) throw new Error(`the hisaab doesn't say "${line}":\n${text}`);
+  });
+
+  await scenario("settings: what the assistant remembers, added and forgotten", async () => {
+    await go("/settings?section=memory");
+    await win.getByLabel("Something to remember").fill("I take chai without sugar");
+    await win.getByLabel("About", { exact: true }).fill("food");
+    await win.getByTestId("memory-add").getByRole("button", { name: "Remember" }).click();
+    const m = await until("the memory on the server", async () => (await live("memory")).find((r) => r.data.text === "I take chai without sugar" && r.data.topic === "food"));
+    const row = win.locator(`[data-memory="${m.id}"]`);
+    await row.hover();
+    await row.getByRole("button", { name: "Forget" }).click();
+    await until("forgotten on the server", async () => !(await live("memory")).some((r) => r.id === m.id));
+  });
+
   await scenario("money: an expense typed in the editor reaches the month", async () => {
     await go("/money");
     await win.getByRole("button", { name: "Expense" }).click();
@@ -541,6 +620,19 @@ async function scenario(name, fn, always = false) {
     await quick.keyboard.press("Enter");
     await until("saved from the quick window", async () => (await live("item")).filter((r) => r.data.name === "Milk").length === milkBefore + 1);
     await until("the window put away", async () => !(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((w) => w.getTitle() === "Quick capture" && w.isVisible()))));
+  });
+
+  await scenario("quick capture: money given to spend arrives with what to buy, linked to it", async () => {
+    await menuClick("File", "Quick capture");
+    const quick = await until("the quick window", async () => app.windows().find((w) => w.url().includes("quick")));
+    await quick.getByTestId("quick-text").waitFor();
+    await quick.getByTestId("quick-text").fill("Father gave me 2000 for medicine: panadol");
+    await quick.keyboard.press("Enter");
+    await quick.getByTestId("quick-review").waitFor({ timeout: 15000 });
+    await quick.getByText(/with Father's money/).waitFor();
+    await quick.keyboard.press("Enter");
+    const fund = await until("the hisaab", async () => (await live("fund")).find((r) => r.data.from === "Father" && r.data.amount === 2000));
+    await until("panadol on it", async () => (await live("item")).find((r) => r.data.name === "Panadol" && r.data.fund_id === fund.id));
   });
 
   await scenario("offline: changes made with no server are kept and sent when it comes back", async () => {

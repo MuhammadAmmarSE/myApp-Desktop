@@ -1,13 +1,14 @@
 // The editor drawer: one place where any record is added or changed, from any page (and from
 // Search, the tray and the menu). It slides in from the right and leaves the page in view.
 import { useState } from "react";
-import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, Languages, Package, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import {
   addDays,
   CAR_PAPERS,
   CAR_SERVICES,
   daysBetween,
   EXPENSE_CATEGORIES,
+  findPerson,
   INCOME_CATEGORIES,
   isoDate,
   PAPER_REMIND,
@@ -34,6 +35,8 @@ import { useUI, type EditKind } from "@/store/ui";
 import { removeCar, removeCarLog, saveCarLog } from "@/lib/car";
 import { removeThing, saveThing, warrantyEnd } from "@/lib/things";
 import { hhmm, money as fmtMoney, MONTHS_LONG } from "@/lib/format";
+import { navigate } from "@/lib/router";
+import { removeFund, reopenIfOwed } from "@/lib/funds";
 import { ChipRow, Form, FormFooter, RemindChips, Row2, TagsInput } from "./kit";
 import { ClientForm, DomainForm, ProjectForm, ServerForm, WorkLogForm } from "./WorkEditors";
 import { InterestForm, MediaForm, PracticeForm, WishForm, WordForm } from "./InterestEditors";
@@ -62,6 +65,7 @@ const META: Record<EditKind, { icon: LucideIcon; add: string; edit: string; tone
   word: { icon: Languages, add: "Add a word", edit: "Edit word" },
   media: { icon: Gamepad2, add: "Add a game, book or show", edit: "Edit" },
   wish: { icon: Gift, add: "Add to your wishlist", edit: "Edit wish" },
+  fund: { icon: HandCoins, add: "Money given to you to spend", edit: "Edit the hisaab" },
 };
 
 const undoToast = (text: string, rec: Rec) => toast.undo(text, () => useRecords.getState().restore(rec));
@@ -176,6 +180,13 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
   const [note, setNote] = useState(d.note || "");
   const [regular, setRegular] = useState(!!d.regular);
   const [paid, setPaid] = useState<number | null>(d.price ?? null);
+  // whose money it's bought with: yours, or a hisaab's (then its cost comes off theirs)
+  const funds = useList("fund");
+  const [fundId, setFundId] = useState<string>(d.fund_id || "");
+  const fund = fundId ? funds.find((f) => f.id === fundId) : undefined;
+  const fundChoices = funds.filter((f) => !f.data.closed || f.id === fundId);
+  // opened to mark it bought: the price comes first
+  const buying = !!preset?.buying;
   const linked = !!rec?.data.money_id;
   const ok = !!name.trim();
   const save = () => {
@@ -183,11 +194,48 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
     const s = useRecords.getState();
     let money_id = rec?.data.money_id ?? null;
     const price = paid && paid > 0 ? paid : null;
-    if (price && !money_id) money_id = s.create("money", { type: "expense", amount: price, currency, category: list === "grocery" ? "Groceries" : "Shopping", note: name.trim(), date: isoDate(), account: "cash" }).id;
-    const data: Partial<ItemData> = { name: name.trim(), qty: qty.trim() || undefined, list, mode: where === "online" ? "online" : "store", today: where === "today", link: where === "online" ? link.trim() || undefined : undefined, note: note.trim() || undefined, regular, price, money_id, ...(price ? { done: true, done_at: rec?.data.done_at || Date.now() } : {}) };
+    if (price && !money_id)
+      money_id = s.create("money", {
+        type: "expense",
+        amount: price,
+        currency: fund?.data.currency || currency,
+        category: list === "grocery" ? "Groceries" : "Shopping",
+        note: qty.trim() ? `${name.trim()} (${qty.trim()})` : name.trim(),
+        date: isoDate(),
+        account: "cash",
+        ...(fund ? { paid_from: fund.id } : {}),
+      }).id;
+    else if (money_id && (rec?.data.fund_id || "") !== fundId) s.update<"money">(money_id, { paid_from: fundId || null });
+    const done = !!price || buying;
+    const data: Partial<ItemData> = {
+      name: name.trim(),
+      qty: qty.trim() || undefined,
+      list,
+      mode: where === "online" ? "online" : "store",
+      today: where === "today",
+      link: where === "online" ? link.trim() || undefined : undefined,
+      note: note.trim() || undefined,
+      regular,
+      price,
+      money_id,
+      fund_id: fundId || null,
+      ...(done ? { done: true, done_at: rec?.data.done_at || Date.now() } : {}),
+    };
     if (rec) s.update<"item">(rec.id, data);
     else s.create("item", { ...(data as ItemData), done: data.done ?? false });
-    toast.success(price && !rec?.data.money_id ? "Bought, and added to Money" : rec ? "Saved" : "Added to the list");
+    if (fundId) reopenIfOwed(fundId);
+    if (rec?.data.fund_id && rec.data.fund_id !== fundId) reopenIfOwed(rec.data.fund_id);
+    toast.success(
+      price && !rec?.data.money_id
+        ? fund
+          ? `Bought with ${fund.data.from}'s money`
+          : "Bought, and added to Money"
+        : buying
+          ? `Bought. Add its price later to put it on ${fund ? `${fund.data.from}'s hisaab` : "Money"}.`
+          : rec
+            ? "Saved"
+            : "Added to the list",
+    );
     close();
   };
   return (
@@ -209,8 +257,13 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
         />
       }
     >
+      {buying && (
+        <Field label={`What did ${name || "it"} cost?`} hint={fund ? `It comes off ${fund.data.from}'s hisaab, not your spending. Leave it empty to add the price later.` : "Leave it empty to add the price later."}>
+          <NumberInput size="lg" value={paid} onChange={setPaid} placeholder="0" autoFocus disabled={linked} aria-label="Price paid" />
+        </Field>
+      )}
       <div className="grid grid-cols-[1fr_110px] gap-3">
-        <Input size="lg" value={name} onChange={setName} placeholder="Item" autoFocus aria-label="Item" />
+        <Input size="lg" value={name} onChange={setName} placeholder="Item" autoFocus={!buying} aria-label="Item" />
         <Input size="lg" value={qty} onChange={setQty} placeholder="Qty" aria-label="Quantity" />
       </div>
       <Field label="List">
@@ -251,9 +304,19 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
         </div>
         <Switch checked={regular} onChange={setRegular} label="Regular" />
       </div>
-      <Field label="Bought it? What it cost" hint={linked ? "Already in Money." : `Saving a price marks it bought and adds it to Money (${currency}).`}>
-        <NumberInput value={paid} onChange={setPaid} placeholder="0" disabled={linked} aria-label="Price paid" />
-      </Field>
+      {fundChoices.length > 0 && (
+        <Field label="Whose money" hint={fund ? `Bought with ${fund.data.from}'s money: its cost comes off their hisaab, not your spending.` : undefined}>
+          <Select<string> value={fundId} onChange={setFundId} options={[{ value: "", label: "Mine" }, ...fundChoices.map((f) => ({ value: f.id, label: `${f.data.from}'s · ${f.data.purpose || "money"}` }))]} />
+        </Field>
+      )}
+      {!buying && (
+        <Field
+          label="Bought it? What it cost"
+          hint={linked ? (rec?.data.fund_id ? "Already on the hisaab." : "Already in Money.") : fund ? `Saving a price marks it bought and puts it on ${fund.data.from}'s hisaab.` : `Saving a price marks it bought and adds it to Money (${currency}).`}
+        >
+          <NumberInput value={paid} onChange={setPaid} placeholder="0" disabled={linked} aria-label="Price paid" />
+        </Field>
+      )}
     </Form>
   );
 }
@@ -269,16 +332,20 @@ function MoneyForm({ rec, preset, close }: FormProps<"money">) {
   const [date, setDate] = useState<string>(d.date || preset?.date || isoDate());
   const [account, setAccount] = useState<NonNullable<MoneyData["account"]>>(d.account || "cash");
   const [monthly, setMonthly] = useState(d.recurring === "monthly");
+  // a purchase out of money someone gave you: it goes on their hisaab, not in your spending
+  const fundId: string | undefined = d.paid_from || preset?.paid_from || undefined;
+  const fund = useRecords((s) => (fundId ? (s.byId[fundId] as Rec<"fund"> | undefined) : undefined));
   const cats: readonly string[] = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const cur = d.currency || currency;
   const ok = !!amount && amount > 0 && !!category;
   const why = !amount || amount <= 0 ? "Type an amount" : !category ? "Pick a category" : "";
   const save = () => {
     if (!ok) return;
-    const data: MoneyData = { type, amount: Math.round(amount! * 100) / 100, currency: cur, category, note: note.trim() || undefined, date, account, recurring: monthly ? "monthly" : null };
+    const data: MoneyData = { type, amount: Math.round(amount! * 100) / 100, currency: cur, category, note: note.trim() || undefined, date, account, recurring: monthly && !fundId ? "monthly" : null };
     if (rec) useRecords.getState().update<"money">(rec.id, data);
-    else useRecords.getState().create("money", data);
-    toast.success(`${type === "income" ? "Earned" : "Spent"} ${fmtMoney(data.amount, cur)} saved`);
+    else useRecords.getState().create("money", fundId ? { ...data, currency: fund?.data.currency || cur, paid_from: fundId } : data);
+    if (fundId) reopenIfOwed(fundId);
+    toast.success(fund ? `${fmtMoney(data.amount, cur)} on ${fund.data.from}'s hisaab` : `${type === "income" ? "Earned" : "Spent"} ${fmtMoney(data.amount, cur)} saved`);
     close();
   };
   return (
@@ -301,18 +368,24 @@ function MoneyForm({ rec, preset, close }: FormProps<"money">) {
         />
       }
     >
-      <Segmented<MoneyData["type"]>
-        block
-        value={type}
-        onChange={(t) => {
-          setType(t);
-          setCategory("");
-        }}
-        options={[
-          { value: "expense", label: "Spent" },
-          { value: "income", label: "Earned" },
-        ]}
-      />
+      {fund ? (
+        <div className="rounded-[12px] bg-surface2 px-3.5 py-2.5 text-[12.5px] text-text2 hairline">
+          Bought with {fund.data.from}&apos;s money ({fund.data.purpose || "money"}): it comes off their hisaab, not your spending.
+        </div>
+      ) : (
+        <Segmented<MoneyData["type"]>
+          block
+          value={type}
+          onChange={(t) => {
+            setType(t);
+            setCategory("");
+          }}
+          options={[
+            { value: "expense", label: "Spent" },
+            { value: "income", label: "Earned" },
+          ]}
+        />
+      )}
       <div className="relative">
         <NumberInput size="lg" value={amount} onChange={setAmount} placeholder="0" autoFocus aria-label="Amount" className="!text-[22px] font-display font-semibold tnum" boxClassName="!h-14" right={<span className="pointer-events-none mr-4 text-[13px] font-medium text-text3">{cur}</span>} />
       </div>
@@ -325,8 +398,8 @@ function MoneyForm({ rec, preset, close }: FormProps<"money">) {
           ))}
         </div>
       </Field>
-      <Field label="What for">
-        <Input value={note} onChange={setNote} placeholder="Optional" />
+      <Field label={fund ? "What you bought" : "What for"}>
+        <Input value={note} onChange={setNote} placeholder={fund ? "e.g. Rice and oil" : "Optional"} />
       </Field>
       <Row2>
         <Field label="Day">
@@ -340,13 +413,114 @@ function MoneyForm({ rec, preset, close }: FormProps<"money">) {
           />
         </Field>
       </Row2>
-      <div className="flex items-center justify-between rounded-[12px] bg-surface2 px-3.5 py-3 hairline">
-        <div>
-          <div className="text-[13px] font-medium">Every month</div>
-          <div className="text-[12px] text-text3">Bills and salary: marked monthly, so you can see what's fixed.</div>
+      {!fund && (
+        <div className="flex items-center justify-between rounded-[12px] bg-surface2 px-3.5 py-3 hairline">
+          <div>
+            <div className="text-[13px] font-medium">Every month</div>
+            <div className="text-[12px] text-text3">Bills and salary: marked monthly, so you can see what's fixed.</div>
+          </div>
+          <Switch checked={monthly} onChange={setMonthly} label="Monthly" />
         </div>
-        <Switch checked={monthly} onChange={setMonthly} label="Monthly" />
-      </div>
+      )}
+    </Form>
+  );
+}
+
+// ---------------- money given to you to spend (a hisaab) ----------------
+const PURPOSES = ["Groceries", "Medicine", "Bills", "Shopping", "Household"];
+function FundForm({ rec, close }: FormProps<"fund">) {
+  const currency = useSettings((s) => s.currency);
+  const peopleRecs = useList("person");
+  const people = peopleRecs.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation }));
+  const d = rec?.data || {};
+  const [amount, setAmount] = useState<number | null>(d.amount ?? null);
+  const [from, setFrom] = useState<string>(d.from || "");
+  const [purpose, setPurpose] = useState<string>(d.purpose || "");
+  const [date, setDate] = useState<string>(d.date || isoDate());
+  const [notes, setNotes] = useState<string>(d.notes || "");
+  const cur = d.currency || currency;
+  const ok = !!amount && amount > 0 && !!from.trim();
+  const why = !amount || amount <= 0 ? "How much did they give?" : !from.trim() ? "Who gave it?" : "";
+  const save = () => {
+    if (!ok) return;
+    const person = findPerson(people, from.trim());
+    const data = { from: from.trim(), person_id: person ? person.id : null, purpose: purpose.trim() || "Shopping", amount: Math.round(amount! * 100) / 100, date, notes: notes.trim() || undefined };
+    const s = useRecords.getState();
+    if (rec) {
+      s.update<"fund">(rec.id, data);
+      toast.success("Saved");
+    } else {
+      const made = s.create("fund", { ...data, currency, moves: [], closed: false });
+      toast.success(`Started the hisaab: ${fmtMoney(data.amount, currency)} from ${data.from}`);
+      navigate(`/funds/${made.id}`);
+    }
+    close();
+  };
+  return (
+    <Form
+      footer={
+        <FormFooter
+          ok={ok}
+          why={why}
+          onSave={save}
+          onCancel={close}
+          saveLabel={rec ? "Save" : "Start the hisaab"}
+          onDelete={
+            rec
+              ? () => {
+                  const undo = removeFund(rec);
+                  toast.undo(`Deleted the hisaab from ${rec.data.from}`, undo);
+                  navigate("/money");
+                  close();
+                }
+              : undefined
+          }
+        />
+      }
+    >
+      {!rec && <div className="text-[12.5px] text-text2">For money someone gives you to buy things for them. What you spend of it stays out of your own spending, and the hisaab keeps what&apos;s left.</div>}
+      <NumberInput
+        size="lg"
+        value={amount}
+        onChange={setAmount}
+        placeholder="0"
+        autoFocus
+        aria-label="How much they gave"
+        className="!text-[22px] font-display font-semibold tnum"
+        boxClassName="!h-14"
+        right={<span className="pointer-events-none mr-4 text-[13px] font-medium text-text3">{cur}</span>}
+      />
+      <Field label="Who gave it">
+        <Input value={from} onChange={setFrom} placeholder="e.g. Mother" aria-label="Who gave it" />
+        {people.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {people
+              .filter((p) => p.relation !== "me")
+              .slice(0, 10)
+              .map((p) => (
+                <Chip key={p.id} active={from.trim().toLowerCase() === p.name.toLowerCase()} onClick={() => setFrom(p.name)}>
+                  {p.name}
+                </Chip>
+              ))}
+          </div>
+        )}
+      </Field>
+      <Field label="What for">
+        <div className="flex flex-wrap gap-1.5">
+          {PURPOSES.map((p) => (
+            <Chip key={p} active={purpose === p} onClick={() => setPurpose(p)}>
+              {p}
+            </Chip>
+          ))}
+        </div>
+        <Input className="mt-2" value={PURPOSES.includes(purpose) ? "" : purpose} onChange={setPurpose} placeholder="Or say what (optional)" aria-label="What for" />
+      </Field>
+      <Field label="Given on">
+        <DatePicker value={date} onChange={(v) => setDate(v || isoDate())} clearable={false} />
+      </Field>
+      <Field label="Note">
+        <Textarea value={notes} onChange={setNotes} placeholder="Optional" rows={2} />
+      </Field>
     </Form>
   );
 }
@@ -1080,6 +1254,7 @@ const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   word: WordForm,
   media: MediaForm,
   wish: WishForm,
+  fund: FundForm,
 };
 
 export function EditorHost() {
@@ -1092,7 +1267,23 @@ export function EditorHost() {
   const meta = e ? META[e.kind] : null;
   const FormC = e ? FORMS[e.kind] : null;
   const payment = e?.kind === "work_log" && (e.rec ? (e.rec.data as { type?: string }).type : e.preset?.type) === "payment";
-  const title = e ? (payment ? (e.rec ? "Edit payment" : "Got paid") : e.rec ? META[e.kind].edit : e.kind === "money" && e.preset?.type === "income" ? "Money in" : META[e.kind].add) : "";
+  const title = e
+    ? payment
+      ? e.rec
+        ? "Edit payment"
+        : "Got paid"
+      : e.kind === "item" && e.preset?.buying
+        ? `Bought ${e.rec ? (e.rec.data as ItemData).name : "it"}?`
+        : e.kind === "money" && (e.preset?.paid_from || (e.rec?.data as MoneyData | undefined)?.paid_from)
+          ? e.rec
+            ? "Edit the purchase"
+            : "A purchase on the hisaab"
+          : e.rec
+            ? META[e.kind].edit
+            : e.kind === "money" && e.preset?.type === "income"
+              ? "Money in"
+              : META[e.kind].add
+    : "";
   return (
     <Drawer open={!!editing} onClose={close} title={title} icon={meta?.icon} iconTone={meta?.tone}>
       {e && FormC && <FormC key={e.n} rec={e.rec || null} preset={e.preset} close={close} />}
