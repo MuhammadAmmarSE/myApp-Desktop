@@ -156,7 +156,7 @@ export function StepCard({ step }: { step: Step }) {
       {step.status === "failed" && step.summary ? (
         <p className="text-[12px] text-danger">{step.summary}</p>
       ) : step.status === "ok" && step.tool === "claude_send" && claudeLinkIn(step.summary) ? (
-        <OpenInClaude url={claudeLinkIn(step.summary)!} />
+        <OpenInClaude url={claudeLinkIn(step.summary)!} reports={/will report back/i.test(step.summary || "")} />
       ) : step.status === "ok" && step.tool !== "run_command" && step.tool !== "claude_task" && step.summary ? (
         <p className="text-[12px] text-text3">{step.summary}</p>
       ) : null}
@@ -165,11 +165,12 @@ export function StepCard({ step }: { step: Step }) {
 }
 
 // a message sent to one of your Claude sessions: its answer, and anything it asks you to approve,
-// are in the session on claude.ai or the Claude app
-function OpenInClaude({ url }: { url: string }) {
+// are in the session on claude.ai or the Claude app (and, when the server can take it, Claude
+// reports back into this chat when it finishes or needs you)
+function OpenInClaude({ url, reports }: { url: string; reports: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <p className="text-[12px] text-text3">{"Delivered. Claude's answer, and anything it asks you to approve, are in the session."}</p>
+      <p className="text-[12px] text-text3">{reports ? "Delivered. Claude will report back here when it finishes or needs you; the whole conversation is in the session." : "Delivered. Claude's answer, and anything it asks you to approve, are in the session."}</p>
       <Button size="xs" variant="secondary" icon={ExternalLink} onClick={() => void bridge.app.openExternal(url)} aria-label="Open the session in Claude">
         Open in Claude
       </Button>

@@ -37,9 +37,14 @@ Object.assign(process.env, {
   REDLINE_UPLOADS_DIR: path.join(work, "uploads"),
   REDLINE_PUBLIC_IP: "203.0.113.7",
   ELEVENLABS_API_KEY: "stand-in-eleven-key",
-  // Claude Code's command line: the backend's stand-in (it says a message was delivered)
+  // Claude Code's command line: the backend's stand-in (it says a message was delivered, and a few
+  // seconds later reports back to the address the message gave, as Claude is asked to)
   CLAUDE_BIN: path.join(backend, "test", "fixtures", "bin", "claude"),
   FAKE_CLAUDE_LOG: path.join(work, "claude.log"),
+  FAKE_CLAUDE_REPORT: "done",
+  FAKE_CLAUDE_REPORT_MS: "6000",
+  // where Claude reports back to (on a real server, its public https address)
+  REDLINE_PUBLIC_URL: `http://127.0.0.1:${port}`,
 });
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

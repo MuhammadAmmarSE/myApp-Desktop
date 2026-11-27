@@ -13,6 +13,7 @@ import { Orb } from "@/components/orb/Orb";
 import { StepCard } from "@/components/assistant/Steps";
 import { LookedUp, ProposalCard, READ_TOOLS } from "@/components/assistant/Proposal";
 import { Reply } from "@/components/assistant/Reply";
+import { ClaudeReportCard } from "@/components/assistant/ClaudeReport";
 import { Composer } from "@/components/assistant/Composer";
 import { SentFiles } from "@/components/assistant/Files";
 import { availabilityOf, deleteChat, markChat, renameChat, useOperator, type ChatCounts, type Run } from "@/store/operator";
@@ -212,7 +213,7 @@ function ChatList({ current }: { current: number | null }) {
                     {live(r.status) && <span className={clsx("h-2 w-2 shrink-0 rounded-full", r.status === "waiting" ? "bg-warn" : "animate-pulse bg-accent")} />}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-text3">
-                    <span className="min-w-0 flex-1 truncate">{r.preview ? `${r.preview.from === "you" ? "You: " : ""}${r.preview.text || (r.preview.files?.length ? r.preview.files.join(", ") : r.preview.photos ? "Photo" : "")}` : st.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{r.preview ? `${r.preview.from === "you" ? "You: " : r.preview.from === "claude" ? "Claude · " : ""}${r.preview.text || (r.preview.files?.length ? r.preview.files.join(", ") : r.preview.photos ? "Photo" : "")}` : st.label}</span>
                     <span className="shrink-0">{ago(r.updated_at)}</span>
                   </div>
                 </button>
@@ -602,6 +603,7 @@ function Conversation({ runId }: { runId: number }) {
               if (it.kind === "reply") return <Reply key={it.id} text={it.text} />;
               if (it.kind === "error") return <p key={it.id} className="px-1 text-[13.5px] text-danger">{it.text}</p>;
               if (it.kind === "stopped") return <p key={it.id} className="self-center text-[12px] text-text3">Stopped</p>;
+              if (it.kind === "claude_report") return <ClaudeReportCard key={it.id} report={it} />;
               if (READ_TOOLS.includes(it.tool)) return <LookedUp key={it.id} step={it} />;
               if (it.tool === "propose_changes" && it.proposal) return <ProposalCard key={it.id} runId={runId} step={it} />;
               return <StepCard key={it.id} step={it} />;

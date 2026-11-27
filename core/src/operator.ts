@@ -75,7 +75,24 @@ export type OpItem =
   | { kind: "reply"; id: number; text: string; at: number }
   | { kind: "error"; id: number; text: string; at: number }
   | { kind: "stopped"; id: number; at: number }
+  | ClaudeReport
   | Step;
+
+// one of your Claude sessions on claude.ai reported back (what Claude says it did, as it said it)
+export type ClaudeReportStatus = "done" | "needs_you" | "working" | "failed";
+export interface ClaudeReport {
+  kind: "claude_report";
+  id: number;
+  session: string;
+  sessionUrl: string;
+  status: ClaudeReportStatus;
+  summary: string;
+  pullRequest: string | null;
+  at: number;
+}
+const REPORT_STATUSES: ClaudeReportStatus[] = ["done", "needs_you", "working", "failed"];
+// what a report's status says, in a word or two
+export const reportStatusWords = (s: string): string => (s === "done" ? "Finished" : s === "needs_you" ? "Needs you" : s === "working" ? "Still working" : s === "failed" ? "Couldn't do it" : "Reported");
 
 const MAX_OUTPUT = 20000;
 
@@ -133,6 +150,18 @@ export function buildTimeline(events: OpEvent[], conversationId: number): OpItem
         if (open && open.status === "running") open.status = "failed";
         open = null;
         items.push({ kind: "stopped", id: e.id, at: e.at });
+        break;
+      case "claude_report":
+        items.push({
+          kind: "claude_report",
+          id: e.id,
+          session: String(d.session || "Claude"),
+          sessionUrl: /^https:\/\/claude\.ai\//.test(String(d.session_url || "")) ? String(d.session_url) : "",
+          status: REPORT_STATUSES.includes(d.status) ? d.status : "working",
+          summary: String(d.summary || ""),
+          pullRequest: /^https:\/\/github\.com\//.test(String(d.pull_request || "")) ? String(d.pull_request) : null,
+          at: e.at,
+        });
         break;
       case "tool": {
         const s: Step = { kind: "step", id: e.id, callId: d.call_id, tool: d.tool, args: d.args || {}, status: "running", summary: "", output: "", at: e.at };

@@ -424,12 +424,34 @@ async function scenario(name, fn, always = false) {
     await win.getByTestId("send").click();
     await win.getByTestId("timeline").getByText("Sent it to your website session", { exact: false }).waitFor({ timeout: 30000 });
     await win.getByTestId("timeline").getByText("Sent to “website” on Claude").waitFor();
+    await win.getByTestId("timeline").getByText("Claude will report back here when it finishes or needs you", { exact: false }).waitFor();
+    const chat = await win.evaluate(() => location.hash.replace(/^#/, ""));
     await win.getByTestId("timeline").getByRole("button", { name: "Open the session in Claude" }).click();
     await until("the session opened in the browser", async () => (await opened()).includes("https://claude.ai/code/session_01WebsiteAbcd"));
     if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "claude-sent.png") });
-    // back in Settings: when it was last sent to, renamed, forgotten and put back
+    // a few seconds later Claude reports back: on another page a toast says so, and Open goes to the
+    // chat, where the report is a card with the way to the session and its pull request
+    await go("/today");
+    const told = win.getByRole("status").filter({ hasText: "Claude · website: Finished" });
+    await told.waitFor({ timeout: 20000 });
+    await told.getByRole("button", { name: "Open" }).click();
+    await until("back in the chat", async () => (await win.evaluate(() => location.hash.replace(/^#/, ""))) === chat);
+    const card = win.getByTestId("timeline").locator('[data-claude-report="done"]');
+    await card.getByText("Added the contact page and opened a pull request.").waitFor();
+    await card.getByText("Finished").waitFor();
+    await card.getByRole("button", { name: "Pull request" }).click();
+    await until("the pull request opened in the browser", async () => (await opened()).includes("https://github.com/example/site/pull/7"));
+    const [[report]] = await db().query("SELECT status, session_name, pull_request FROM claude_reports");
+    if (!report || report.status !== "done" || report.session_name !== "website") throw new Error(`report: ${JSON.stringify(report)}`);
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "claude-report.png") });
+    // the chat list says it, as the last thing in that chat
+    await go("/assistant");
+    await win.getByTestId("chat-list").getByText("Claude · website: Added the contact page", { exact: false }).waitFor();
+    // back in Settings: what it last reported, renamed, forgotten and put back
     await go("/settings?section=assistant");
-    await row.getByText("sent just now", { exact: false }).waitFor({ timeout: 15000 });
+    await box.getByTestId("claude-sessions-about").getByText("Allowed domains", { exact: false }).waitFor();
+    await row.getByText("finished just now", { exact: false }).waitFor({ timeout: 15000 });
+    await row.locator("[data-last-report]").getByText("Added the contact page", { exact: false }).waitFor();
     await row.getByRole("button", { name: "More for website" }).click();
     await win.getByRole("menuitem", { name: "Rename or change its note" }).click();
     await box.getByLabel("New name").fill("shop site");

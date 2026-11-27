@@ -1,12 +1,13 @@
 // Settings → Assistant → Claude sessions: your Claude Code sessions on claude.ai that the assistant
 // can send work to ("tell the website session to add a contact page"). Anthropic has no way for an
 // app to list them, so you give each one once: its link and a name. Claude's answers, and any
-// approval it asks for, are in the session itself (claude.ai or the Claude app).
+// approval it asks for, are in the session itself (claude.ai or the Claude app); when the server
+// can take it, Claude also reports back into the chat that sent the work.
 import { useEffect, useState } from "react";
 import { Bot, ExternalLink, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
-import { parseClaudeSession } from "@myapp/core";
+import { parseClaudeSession, reportStatusWords } from "@myapp/core";
 import { Button, Card, Field, IconButton, Input, Menu, SkeletonRows, toast } from "@/components/ui";
-import { claudeSessionsOn, editClaudeSession, forgetClaudeSession, listClaudeSessions, saveClaudeSession, useOperator, type SavedClaudeSession } from "@/store/operator";
+import { claudeReportsOn, claudeSessionsOn, editClaudeSession, forgetClaudeSession, listClaudeSessions, saveClaudeSession, useOperator, type SavedClaudeSession } from "@/store/operator";
 import { bridge } from "@/lib/bridge";
 import { ago } from "@/lib/format";
 
@@ -15,6 +16,8 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 export function ClaudeSessions() {
   const on = useOperator((s) => (s.availability === "ready" || s.availability === "paused") && claudeSessionsOn(s.status));
+  const reports = useOperator((s) => claudeReportsOn(s.status));
+  const news = useOperator((s) => s.reportNews); // a report came in: the list says it
   const [list, setList] = useState<SavedClaudeSession[] | null>(null);
   const [link, setLink] = useState("");
   const [name, setName] = useState("");
@@ -30,7 +33,7 @@ export function ClaudeSessions() {
     });
   useEffect(() => {
     if (on) void load();
-  }, [on]);
+  }, [on, news]);
   if (!on) return null;
 
   const id = parseClaudeSession(link);
@@ -81,8 +84,10 @@ export function ClaudeSessions() {
   return (
     <section className="mt-6" data-testid="claude-sessions">
       <div className="mb-1 text-[13px] font-semibold">Claude sessions</div>
-      <p className="mb-3 text-[12.5px] text-text3">
-        {"Your Claude Code sessions on claude.ai. Give each one once and the assistant can send it work by name. Claude's answers, and anything it asks you to approve, are in the session on claude.ai or the Claude app."}
+      <p className="mb-3 text-[12.5px] text-text3" data-testid="claude-sessions-about">
+        {reports
+          ? "Your Claude Code sessions on claude.ai. Give each one once and the assistant can send it work by name; Claude reports back in that chat when it finishes or needs you. For that, allow your server's address in the session's cloud environment on claude.ai (Network access → Allowed domains). Anything it asks you to approve is in the session, on claude.ai or the Claude app."
+          : "Your Claude Code sessions on claude.ai. Give each one once and the assistant can send it work by name. Claude's answers, and anything it asks you to approve, are in the session on claude.ai or the Claude app. (For them to report back here, set REDLINE_PUBLIC_URL on your server.)"}
       </p>
       <Card className="mb-3">
         <form
@@ -138,9 +143,12 @@ export function ClaudeSessions() {
                 </div>
               ) : (
                 <>
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openInClaude(s.url)} title={s.url}>
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openInClaude(s.url)} title={s.last_report ? `${reportStatusWords(s.last_report.status)} ${ago(s.last_report.at)}: ${s.last_report.summary}` : s.url}>
                     <div className="truncate text-[13.5px] font-medium">{s.name}</div>
-                    <div className="truncate text-[12px] text-text3">{[s.note, s.last_sent_at ? `sent ${ago(s.last_sent_at)}` : "nothing sent yet"].filter(Boolean).join(" · ")}</div>
+                    <div className="truncate text-[12px] text-text3">
+                      {[s.note, s.last_report ? `${reportStatusWords(s.last_report.status).toLowerCase()} ${ago(s.last_report.at)}` : s.last_sent_at ? `sent ${ago(s.last_sent_at)}` : "nothing sent yet"].filter(Boolean).join(" · ")}
+                    </div>
+                    {s.last_report && <div className="mt-0.5 line-clamp-2 text-[12px] text-text2" data-last-report>{s.last_report.summary}</div>}
                   </button>
                   <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => openInClaude(s.url)}>
                     Open in Claude

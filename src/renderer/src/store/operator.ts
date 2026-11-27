@@ -40,9 +40,20 @@ export interface Run {
   updated_at: number;
   starred?: boolean;
   archived?: boolean;
-  preview?: { from: "you" | "assistant"; text: string; photos: number; files?: string[] } | null;
+  preview?: { from: "you" | "assistant" | "claude"; text: string; photos: number; files?: string[] } | null;
 }
 export type ChatCounts = { all: number; starred: number; archived: number };
+// a report from one of your Claude sessions, as the questions long-poll brings it
+export interface ReportNotice {
+  id: number;
+  session: string;
+  session_url: string;
+  run_id: number | null;
+  status: "done" | "needs_you" | "working" | "failed";
+  summary: string;
+  pull_request: string | null;
+  at: number;
+}
 
 type State = {
   availability: Availability;
@@ -56,6 +67,7 @@ type State = {
   // server, so the app doesn't offer them; null: not known yet
   upToDate: boolean | null;
   runsLoaded: boolean; // the list has come back at least once (an empty list then means none)
+  reportNews: ReportNotice[]; // reports that came in while Redline was open, newest last (to announce)
   loadStatus: (refresh?: boolean) => Promise<void>;
   loadRuns: () => Promise<void>;
   setEnabled: (on: boolean) => Promise<void>;
@@ -83,6 +95,7 @@ export const useOperator = create<State>((set, get) => ({
   counts: null,
   upToDate: null,
   runsLoaded: false,
+  reportNews: [],
   loadStatus: async (refresh) => {
     try {
       const s = await api<OperatorStatus>("GET", `/operator/status${refresh ? "?refresh=1" : ""}`, undefined, { timeoutMs: 45000 });
@@ -109,7 +122,7 @@ export const useOperator = create<State>((set, get) => ({
     await api("POST", `/operator/approvals/${id}`, { decision, note: note || undefined });
     set({ approvals: get().approvals.filter((a) => a.id !== id) });
   },
-  reset: () => set({ availability: "unknown", message: "", status: null, approvals: [], runs: [], favourites: [], counts: null, upToDate: null, runsLoaded: false }),
+  reset: () => set({ availability: "unknown", message: "", status: null, approvals: [], runs: [], favourites: [], counts: null, upToDate: null, runsLoaded: false, reportNews: [] }),
 }));
 
 // The checks every few seconds mostly bring back what's already here: only store what differs, so
@@ -171,8 +184,11 @@ export interface SavedClaudeSession {
   created_at: number;
   last_sent_at: number | null;
   last_message: string;
+  last_report?: { status: ReportNotice["status"]; summary: string; pull_request: string | null; at: number } | null; // an older server says nothing
 }
 export const claudeSessionsOn = (st: OperatorStatus | null) => !!st?.features?.includes("claude_sessions");
+// the server can take reports back from Claude (it knows its own public address)
+export const claudeReportsOn = (st: OperatorStatus | null) => !!st?.features?.includes("claude_reports");
 export async function listClaudeSessions(): Promise<SavedClaudeSession[]> {
   return (await orUpdate(api<{ sessions: SavedClaudeSession[] }>("GET", "/operator/claude-sessions"))).sessions;
 }
@@ -190,9 +206,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const whenActive = (): Promise<void> => Promise.resolve();
 // Keeps the list of waiting questions current while Redline runs (even with the window in the tray,
 // so a question can be announced): one request held open on the server until a question comes or
-// goes. Returns a function that stops it.
+// goes, or one of your Claude sessions reports back. Returns a function that stops it.
 export function watchApprovals(): () => void {
   let alive = true;
+  // the newest report from a Claude session already heard of: the first answer (asked without
+  // waiting) says which, and only what comes after it is announced (older ones are in their chats)
+  let reportsAfter: number | null = null;
+  let first = true;
   (async () => {
     while (alive) {
       await whenActive();
@@ -202,9 +222,20 @@ export function watchApprovals(): () => void {
         .approvals.map((a) => a.id)
         .join(",");
       try {
-        const r = await api<{ approvals: Approval[] }>("GET", `/operator/approvals?wait=25&known=${known}`, undefined, { timeoutMs: 35000 });
+        const after = reportsAfter == null ? "" : `&reports_after=${reportsAfter}`;
+        const r = await api<{ approvals: Approval[]; reports?: ReportNotice[]; reports_latest?: number }>("GET", `/operator/approvals?wait=${first ? 0 : 25}&known=${known}${after}`, undefined, { timeoutMs: 35000 });
         if (!alive) break;
+        first = false;
         setIfChanged({ approvals: r.approvals, availability: "ready" });
+        // an older server says nothing about reports
+        if (typeof r.reports_latest === "number") {
+          const news = (r.reports || []).filter((x) => reportsAfter != null && x.id > reportsAfter);
+          reportsAfter = Math.max(reportsAfter ?? 0, r.reports_latest, ...news.map((x) => x.id));
+          if (news.length) {
+            useOperator.setState({ reportNews: news });
+            void useOperator.getState().loadRuns();
+          }
+        }
       } catch (e) {
         if (!alive) break;
         const a = availabilityOf(e);

@@ -1,9 +1,12 @@
 // Watches for the assistant's questions while Redline runs. When one comes in: a card in the
 // corner of any page (not on the chat it belongs to, which shows it already) and, if the window
-// isn't in front, a notification.
+// isn't in front, a notification. A report from one of your Claude sessions is announced the same
+// way: a toast you can open, and a notification when the window is in the background.
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, Fingerprint } from "lucide-react";
+import { reportStatusWords } from "@myapp/core";
+import { toast } from "@/components/ui";
 import { useOperator, watchApprovals } from "@/store/operator";
 import { navigate, useLocation } from "@/lib/router";
 import { bridge } from "@/lib/bridge";
@@ -21,6 +24,22 @@ export function ApprovalsHost() {
       void bridge.notify({ title: "The assistant needs your yes", body: a.summary, url: `/assistant/${a.conversation_id}` });
     }
   }, [approvals]);
+  // a Claude session reported back: say so, unless that chat is open (it shows it there)
+  const news = useOperator((s) => s.reportNews);
+  const toldReport = useRef(0); // the newest report already announced
+  useEffect(() => {
+    const r = news[news.length - 1];
+    if (!r || r.id <= toldReport.current) return;
+    toldReport.current = r.id;
+    const chat = r.run_id ? `/assistant/${r.run_id}` : null;
+    const title = `Claude · ${r.session}: ${reportStatusWords(r.status)}`;
+    void bridge.notify({ title, body: r.summary, url: chat || "/assistant" });
+    if (chat && path === chat) return;
+    const text = `${title}. ${r.summary}`;
+    toast(text.length > 160 ? `${text.slice(0, 159)}…` : text, { tone: r.status === "failed" ? "error" : r.status === "done" ? "success" : "info", ...(chat ? { action: { label: "Open", run: () => navigate(chat) } } : {}), ms: 9000 });
+    // path is read, not watched: moving to another page doesn't announce it again
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [news]);
   const first = approvals[0];
   const here = first && path === `/assistant/${first.conversation_id}`;
   return (

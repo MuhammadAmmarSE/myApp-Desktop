@@ -544,5 +544,23 @@ ok("operator: Claude sessions on claude.ai", () => {
   assert.strictEqual(c.describeStep({ kind: "step", tool: "claude_sessions", args: {}, status: "ok" }).title, "Looked at your Claude sessions");
   assert.strictEqual(c.claudeLinkIn("Sent to “website”. Its answer shows in the session: https://claude.ai/code/session_01AbCdEf"), "https://claude.ai/code/session_01AbCdEf");
   assert.strictEqual(c.claudeLinkIn("Saved"), null);
+  // a session reporting back becomes its own item in the conversation
+  const tl = c.buildTimeline(
+    [
+      { id: 1, run_id: 5, at: 1000, type: "user", data: { text: "tell website to add a page" } },
+      { id: 2, run_id: 5, at: 2000, type: "claude_report", data: { session: "website", session_url: "https://claude.ai/code/session_01AbCdEf", status: "needs_you", summary: "Which colour?", pull_request: "https://evil.example.com/x" } },
+      { id: 3, run_id: 5, at: 3000, type: "claude_report", data: { session: "website", session_url: "javascript:alert(1)", status: "bogus", summary: "Done.", pull_request: "https://github.com/o/site/pull/7" } },
+    ],
+    5,
+  );
+  const reps = tl.filter((x) => x.kind === "claude_report");
+  assert.deepStrictEqual(
+    reps.map((r) => [r.session, r.status, r.summary, r.pullRequest, r.sessionUrl]),
+    [
+      ["website", "needs_you", "Which colour?", null, "https://claude.ai/code/session_01AbCdEf"],
+      ["website", "working", "Done.", "https://github.com/o/site/pull/7", ""],
+    ],
+  );
+  assert.strictEqual(c.reportStatusWords("needs_you"), "Needs you");
 });
 console.log(`core: ${n} checks passed`);

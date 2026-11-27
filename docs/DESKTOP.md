@@ -52,6 +52,15 @@ main process (Node)                       screens (Chromium, sandboxed)
   assistant sends them work by name; a sent step has Open in Claude, which opens the session in
   your browser through the main process (`bridge.app.openExternal`). Claude's answer and anything
   it asks you to approve are in the session, not here.
+- **Claude reports back** (`components/assistant/ClaudeReport.tsx`): when the server's status
+  lists `claude_reports` (it has `REDLINE_PUBLIC_URL`), each message asks Claude to post a short
+  status when it finishes or needs you. The report is an event in the chat that sent the work
+  (core's `buildTimeline` makes it a `claude_report` item: Claude's words, the status, Open in
+  Claude and the pull request), and the questions long-poll (`watchApprovals`, with
+  `reports_after`; the first request doesn't wait, to learn which reports are old) brings it to
+  `reportNews`. `components/shell/ApprovalsHost.tsx` announces a new one with a toast you can open
+  (not on that chat, which shows it) and a notification when the window isn't in front. Settings
+  shows each session's last report. Nothing acts on a report by itself.
 - **Your records in the assistant**: the server reads its copy of your records to answer and
   never changes one. A look is one quiet line; changes it proposes come as a card
   (`components/assistant/Proposal.tsx`). Save runs `lib/proposals.ts`: cleaned again against this
