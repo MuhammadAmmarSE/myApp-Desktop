@@ -17,6 +17,8 @@ export interface Settings {
   sidebar: "full" | "icons";
   weekStart: 0 | 1; // Sunday or Monday
   readAloud: boolean; // the assistant's replies are read out
+  naturalVoice: boolean; // read in your server's ElevenLabs voice when it has one (this computer's voice otherwise)
+  voiceId: string; // the ElevenLabs voice picked here; "" = the server's default
   searches: string[]; // recent searches, newest first
   todoView: "list" | "board";
   moneyView: "month" | "year";
@@ -34,6 +36,8 @@ export const DEFAULTS: Settings = {
   sidebar: "full",
   weekStart: 1,
   readAloud: false,
+  naturalVoice: true,
+  voiceId: "",
   searches: [],
   todoView: "list",
   moneyView: "month",

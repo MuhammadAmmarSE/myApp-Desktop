@@ -1,6 +1,6 @@
 // A Redline server for the desktop tests: the real myapp-backend (from REDLINE_BACKEND_DIR, by
-// default ../myapp-backend) on a test database, with a stand-in for DeepSeek, so nothing leaves
-// this machine. It answers Capture with a fixed set of things to save, and the assistant with a
+// default ../myapp-backend) on a test database, with stand-ins for DeepSeek and ElevenLabs, so
+// nothing leaves this machine. It answers Capture with a fixed set of things to save, and the assistant with a
 // short script: a harmless command, then one that needs your yes, then an answer.
 //   TEST_DB_USER=... TEST_DB_PASSWORD=... node test/e2e/server.js [port] [--seed] [--keep]
 // The test database (its name must contain "test") is emptied every time it starts, unless
@@ -33,6 +33,7 @@ Object.assign(process.env, {
   REDLINE_OPERATOR: "on",
   REDLINE_WORKDIR: work,
   REDLINE_PUBLIC_IP: "203.0.113.7",
+  ELEVENLABS_API_KEY: "stand-in-eleven-key",
 });
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -110,9 +111,39 @@ const standIn = http.createServer((req, res) => {
   });
 });
 
+// ElevenLabs stand-in: two voices, and a short tone for anything read aloud; what was read, in
+// which voice, goes to voice.log in the work folder for the tests to check
+const TONE = fs.readFileSync(path.join(__dirname, "tone.mp3"));
+const eleven = http.createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", () => {
+    const json = (o) => res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(o));
+    if (req.headers["xi-api-key"] !== "stand-in-eleven-key") return res.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ detail: { code: "invalid_api_key", message: "no" } }));
+    if (req.url.startsWith("/v2/voices"))
+      return json({
+        voices: [
+          { voice_id: "VoiceCalmCalmCalm001", name: "Calm one", category: "premade", labels: { gender: "female", accent: "british" }, preview_url: "" },
+          { voice_id: "VoiceWarmWarmWarm002", name: "Warm one", category: "premade", labels: { gender: "male", accent: "american" }, preview_url: "" },
+        ],
+        has_more: false,
+      });
+    if (req.url.startsWith("/v1/user/subscription")) return json({ tier: "starter", character_count: 1200, character_limit: 30000 });
+    const m = /^\/v1\/text-to-speech\/([^/?]+)/.exec(req.url);
+    if (m) {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      fs.appendFileSync(path.join(work, "voice.log"), `speak ${m[1]} ${body.text}\n`);
+      return res.writeHead(200, { "Content-Type": "audio/mpeg" }).end(TONE);
+    }
+    res.writeHead(404).end();
+  });
+});
+
 (async () => {
   await new Promise((r) => standIn.listen(0, "127.0.0.1", r));
   process.env.DEEPSEEK_BASE_URL = `http://127.0.0.1:${standIn.address().port}`;
+  await new Promise((r) => eleven.listen(0, "127.0.0.1", r));
+  process.env.ELEVENLABS_BASE_URL = `http://127.0.0.1:${eleven.address().port}`;
   const req = (m) => require(path.join(backend, "src", m));
   const db = req("db");
   const { hashPassword } = req("auth");

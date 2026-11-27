@@ -15,7 +15,8 @@ export interface OperatorStatus {
   enabled: boolean;
   pending_approvals: number;
   approval_minutes: number;
-  connections: { server: Connection; deepseek: Connection; github: Connection; godaddy: Connection; claude: Connection; firebase: Connection };
+  // elevenlabs: an older server doesn't say
+  connections: { server: Connection; deepseek: Connection; elevenlabs?: Connection; github: Connection; godaddy: Connection; claude: Connection; firebase: Connection };
 }
 export interface Approval {
   id: number;

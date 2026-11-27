@@ -113,6 +113,16 @@ the server; Quick capture's window doesn't keep records, so it sends drafts with
 (`ref`) that the main window swaps for the real ones as it makes them, and "they gave more" as a
 `fund_more` draft (App.tsx `handleCommand`).
 
+## Reading aloud (`lib/speech.ts`)
+
+With "Read answers aloud" on, an answer is read in your ElevenLabs voice when your server has an
+ElevenLabs key (`/api/voice/status`, checked every ten minutes) and Settings → Assistant → Natural
+voice is on: the words go to `/api/voice/speak` through the main process like every other call,
+and the mp3 that comes back plays from a data URL (`media-src data:`). The page fetches nothing
+itself, so trying a voice in Settings reads a line in it through the server rather than playing
+ElevenLabs' sample URL. Otherwise the computer's own voices (`speechSynthesis`) read it. The key
+never leaves the server.
+
 ## The assistant's guide
 
 Every page in `App.tsx`'s `ROUTES` must be in core's `guide.ts` (the feature it belongs to), and

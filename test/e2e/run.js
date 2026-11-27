@@ -389,6 +389,21 @@ async function scenario(name, fn, always = false) {
     await until("forgotten on the server", async () => !(await live("memory")).some((r) => r.id === m.id));
   });
 
+  await scenario("settings: the natural voice from the server; a voice picked here reads answers", async () => {
+    await go("/settings?section=assistant");
+    await win.getByText(/ElevenLabs on your server · 28,800 characters left this month/).waitFor();
+    await win.getByRole("button", { name: "The voice" }).click();
+    await win.getByRole("option", { name: /Warm one/ }).click();
+    const log = path.join(workdir, "voice.log");
+    if (fs.existsSync(log)) fs.unlinkSync(log);
+    await win.getByRole("button", { name: "Hear it" }).click();
+    await win.getByRole("button", { name: "Stop" }).waitFor();
+    await win.screenshot({ path: path.join(OUT, "voice-settings.png") }).catch(() => {});
+    const said = await until("read aloud through the server", async () => fs.existsSync(log) && fs.readFileSync(log, "utf8"));
+    if (!/^speak VoiceWarmWarmWarm002 Hi! This is how I'll read your answers/.test(said)) throw new Error(`read with the wrong voice: ${said}`);
+    await win.getByRole("button", { name: "Hear it" }).waitFor({ timeout: 8000 });
+  });
+
   await scenario("money: an expense typed in the editor reaches the month", async () => {
     await go("/money");
     await win.getByRole("button", { name: "Expense" }).click();

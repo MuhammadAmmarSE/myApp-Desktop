@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import {
+  AudioLines,
   Bell,
   Bot,
   Brain,
@@ -24,16 +25,20 @@ import {
   Monitor,
   Moon,
   Palette,
+  Play,
   Power,
   RefreshCw,
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Square,
   Sun,
   Upload,
   User as UserIcon,
+  Volume2,
   type LucideIcon,
 } from "lucide-react";
+import { hush, loadVoices, loadVoiceStatus, speak, useSpeaking, useVoiceServer, type Voice } from "@/lib/speech";
 import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
 import type { AppInfo, Prefs } from "@shared/ipc";
 import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
@@ -364,9 +369,10 @@ function Startup() {
 }
 
 // ---------------- the assistant ----------------
-const CONN: { key: "server" | "deepseek" | "github" | "godaddy" | "claude" | "firebase"; label: string; what: string }[] = [
+const CONN: { key: "server" | "deepseek" | "elevenlabs" | "github" | "godaddy" | "claude" | "firebase"; label: string; what: string }[] = [
   { key: "server", label: "Server", what: "Runs commands on your server" },
   { key: "deepseek", label: "DeepSeek", what: "The AI that plans each step" },
+  { key: "elevenlabs", label: "ElevenLabs", what: "The voice that reads answers" },
   { key: "github", label: "GitHub", what: "Repos, issues, secrets" },
   { key: "claude", label: "Claude Code", what: "Coding work in your repos" },
   { key: "firebase", label: "Firebase", what: "Hosting and projects" },
@@ -444,8 +450,72 @@ function Memory() {
   );
 }
 
+// the natural voice on your server (ElevenLabs): on or off here, which voice, and hearing it
+function VoiceRows() {
+  const voice = useVoiceServer();
+  const naturalVoice = useSettings((s) => s.naturalVoice);
+  const voiceId = useSettings((s) => s.voiceId);
+  const set = useSettings((s) => s.set);
+  const speaking = useSpeaking((s) => s.speaking);
+  const [voices, setVoices] = useState<Voice[] | null>(null);
+  const [voicesError, setVoicesError] = useState("");
+  useEffect(() => {
+    void loadVoiceStatus(true);
+  }, []);
+  const on = voice.state === "on";
+  useEffect(() => {
+    if (!on || !naturalVoice || voices) return;
+    loadVoices()
+      .then((d) => setVoices(d.voices))
+      .catch((e) => setVoicesError(e?.message || "Couldn't load the voices."));
+  }, [on, naturalVoice, voices]);
+  useEffect(() => () => hush(), []);
+  const left = voice.usage && voice.usage.limit ? Math.max(0, voice.usage.limit - voice.usage.used) : null;
+  const chosen = voiceId || voice.defaultVoice || "";
+  return (
+    <>
+      <Row
+        title="Natural voice"
+        sub={
+          on
+            ? left !== null
+              ? `ElevenLabs on your server · ${left.toLocaleString("en-US")} characters left this month`
+              : "ElevenLabs on your server"
+            : voice.state === "unknown"
+              ? "Checking your server…"
+              : voice.message || "Not set up on your server (ELEVENLABS_API_KEY)"
+        }
+        icon={AudioLines}
+      >
+        <Switch checked={on && naturalVoice} disabled={!on} onChange={(v) => set({ naturalVoice: v })} label="Natural voice" />
+      </Row>
+      {on && naturalVoice ? (
+        <Row title="The voice" sub={voicesError || "Reads answers on this computer"} icon={Volume2}>
+          <div className="flex items-center gap-2">
+            {voices ? (
+              <Select
+                value={chosen}
+                onChange={(v) => set({ voiceId: v === voice.defaultVoice ? "" : v })}
+                options={voices.map((v) => ({ value: v.id, label: v.id === voice.defaultVoice ? `${v.name} (server's default)` : v.name, hint: [v.gender, v.accent].filter(Boolean).join(" · ") }))}
+                size="sm"
+                width={220}
+                label="The voice"
+              />
+            ) : null}
+            <Button size="sm" variant="ghost" icon={speaking ? Square : Play} onClick={() => (speaking ? hush() : speak("Hi! This is how I'll read your answers. Aap Urdu mein bhi baat kar sakte hain.", { voiceId: chosen }))}>
+              {speaking ? "Stop" : "Hear it"}
+            </Button>
+          </div>
+        </Row>
+      ) : null}
+    </>
+  );
+}
+
 function AssistantSettings() {
   const op = useOperator();
+  const voice = useVoiceServer();
+  const naturalVoice = useSettings((s) => s.naturalVoice);
   const readAloud = useSettings((s) => s.readAloud);
   const set = useSettings((s) => s.set);
   const [busy, setBusy] = useState(false);
@@ -475,9 +545,10 @@ function AssistantSettings() {
             label="Let it take tasks"
           />
         </Row>
-        <Row title="Read answers aloud" sub="With this computer's voice" icon={Sparkles}>
+        <Row title="Read answers aloud" sub={voice.state === "on" && naturalVoice ? "In your ElevenLabs voice" : "With this computer's voice"} icon={Sparkles}>
           <Switch checked={readAloud} onChange={(v) => set({ readAloud: v })} label="Read answers aloud" />
         </Row>
+        <VoiceRows />
         <Row title="Approving a step" sub={isMac() ? "Touch ID, or your password" : "Your account password, checked by your server"} icon={ShieldCheck}>
           <Tag tone="success">Always asked</Tag>
         </Row>

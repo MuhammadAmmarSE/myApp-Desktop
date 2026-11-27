@@ -20,7 +20,9 @@ function useFocusTrap(open: boolean, box: React.RefObject<HTMLDivElement | null>
     const before = document.activeElement as HTMLElement | null;
     const t = setTimeout(() => {
       const el = box.current;
-      if (!el) return;
+      // already in a field of this dialog (an autoFocus, or a quick click): leave it there, unless
+      // the dialog asked for something else first
+      if (!el || (!initial && el.contains(document.activeElement))) return;
       const first = (initial && el.querySelector<HTMLElement>(initial)) || el.querySelector<HTMLElement>("[data-autofocus]") || el.querySelector<HTMLElement>("input,textarea") || el.querySelector<HTMLElement>(FOCUSABLE);
       first?.focus();
     }, 30);
