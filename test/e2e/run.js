@@ -161,7 +161,7 @@ async function scenario(name, fn, always = false) {
       await win.getByTestId("greeting").waitFor({ timeout: 15000 });
       if (!/Sam/.test(await win.getByTestId("greeting").innerText())) throw new Error("greeting doesn't use the name");
     },
-    true
+    true,
   );
 
   await scenario("today: the account's records arrive from the server", async () => {
@@ -271,6 +271,29 @@ async function scenario(name, fn, always = false) {
     await win.getByRole("tab", { name: "Read" }).click();
     await win.getByTestId("note-preview").locator('input[type="checkbox"]').first().click();
     await until("ticked in the text", async () => (await live("note")).find((r) => r.id === n.id && r.data.body.startsWith("- [x] Tickets")));
+  });
+
+  await scenario("notes: a note saved while offline goes to the AI in one click, and is done once saved", async () => {
+    await go("/notes/new");
+    // the editor opens in the mode it was last left in
+    if (
+      !(await win
+        .getByTestId("note-title")
+        .isVisible()
+        .catch(() => false))
+    )
+      await win.getByRole("tab", { name: "Write" }).click();
+    await win.getByTestId("note-title").fill("30k paid to various Load");
+    await win.getByTestId("note-body").fill("30k paid to various Load");
+    await win.getByLabel("Tags").fill("inbox");
+    await win.getByLabel("Tags").press("Tab");
+    const note = await until("the inbox note", async () => (await live("note")).find((r) => r.data.title === "30k paid to various Load" && (r.data.tags || []).includes("inbox")));
+    await win.getByTestId("note-inbox").getByRole("button", { name: "Send to AI" }).click();
+    await win.getByTestId("review").waitFor({ timeout: 15000 });
+    await win.getByTestId("save-all").click();
+    await until("the expense", async () => (await live("money")).find((r) => r.data.amount === 30000 && r.data.note === "Paid to various load"));
+    await until("the note done", async () => !(await live("note")).find((r) => r.id === note.id));
+    await win.getByText(/and the note is done/).waitFor();
   });
 
   await scenario("lists: commas add several, and ticking one marks it bought", async () => {

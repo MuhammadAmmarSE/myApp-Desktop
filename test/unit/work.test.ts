@@ -9,6 +9,8 @@ vi.mock("@/lib/bridge", () => ({
   bridge: { app: { platform: "linux" }, db: { load: async () => ({ records: [], meta: {} }), put: async () => {}, markClean: async () => {}, setMeta: async () => {} } },
 }));
 
+vi.mock("@/lib/router", () => ({ navigate: () => {} }));
+
 const { weeklyHours, saveWorkLog, removeProject, renewedUntil } = await import("@/lib/work");
 const { practiceGrid, splitWord, gotWish, removeInterest } = await import("@/lib/interests");
 const { useRecords, EMPTY_LISTS } = await import("@/store/records");
@@ -144,5 +146,28 @@ describe("the project timer", () => {
     expect(running.data.status).toBe("active");
     expect(stopTimer(running, 1000 + 61 * 60000)).toBe(60);
     expect((useRecords.getState().byId[p.id] as Rec<"project">).data.timer_from).toBeNull();
+  });
+});
+
+describe("notes waiting for the AI", () => {
+  it("sends a note's words, and once saved removes only the inbox notes, with Undo", async () => {
+    const { noteText, doneWithNotes } = await import("@/lib/inbox");
+    expect(noteText({ title: "30k paid to various Load", body: "30k paid to various Load", tags: ["inbox"], pinned: false })).toBe("30k paid to various Load");
+    expect(noteText({ title: "Shopping", body: "milk, eggs", tags: [], pinned: false })).toBe("Shopping\nmilk, eggs");
+    expect(noteText({ title: "Only a title", body: "", tags: [], pinned: false })).toBe("Only a title");
+    const s = useRecords.getState();
+    const inbox = s.create("note", { title: "30k paid", body: "30k paid", tags: ["inbox"], pinned: false });
+    const mine = s.create("note", { title: "Mine", body: "keep me", tags: [], pinned: false });
+    const money = s.create("money", { type: "expense", amount: 30000, currency: "PKR", category: "Other", date: "2026-11-27", account: "cash", recurring: null });
+    const done = doneWithNotes([inbox.id, mine.id], [money.id]);
+    expect(done.removed).toBe(1);
+    expect(live("note").map((n) => n.id)).toEqual([mine.id]);
+    done.undo();
+    expect(
+      live("note")
+        .map((n) => n.id)
+        .sort(),
+    ).toEqual([inbox.id, mine.id].sort());
+    expect(live("money")).toHaveLength(0);
   });
 });

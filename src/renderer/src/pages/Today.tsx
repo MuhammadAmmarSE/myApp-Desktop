@@ -16,6 +16,7 @@ import { edit } from "@/store/ui";
 import { carHeadsUp } from "@/lib/car";
 import { warrantyHeadsUp } from "@/lib/things";
 import { workHeadsUp } from "@/lib/work";
+import { isInbox } from "@/lib/inbox";
 import { useNow } from "@/lib/clock";
 import { navigate } from "@/lib/router";
 import { bridge, modKey } from "@/lib/bridge";
@@ -44,6 +45,7 @@ export default function Today() {
   const domains = useList("domain");
   const servers = useList("server");
   const words = useList("word");
+  const notes = useList("note");
   const currency = useSettings((s) => s.currency);
   const name = useSettings((s) => s.name) || useAuth((s) => s.user?.name) || "";
   const [text, setText] = useState("");
@@ -78,6 +80,8 @@ export default function Today() {
     if (renew) out.push({ key: "renew", icon: Globe, text: renew, tone: /expired|was due/.test(renew) ? "danger" : "warn", to: "/work" });
     const toGo = dueWords(words, today).length;
     if (toGo >= 5) out.push({ key: "words", icon: Languages, text: `${toGo} words to go over`, tone: "accent", to: "/interests?tab=words" });
+    const waiting = notes.filter(isInbox);
+    if (waiting.length) out.push({ key: "inbox", icon: Sparkles, text: waiting.length === 1 ? "A note saved offline is waiting for the AI" : `${waiting.length} notes saved offline are waiting for the AI`, tone: "accent", to: "/notes" });
     const soon = coming.find((u) => u.kind === "date" && u.days <= 3);
     if (soon) out.push({ key: "date", icon: CalendarHeart, text: `${soon.title} ${soon.days === 0 ? "today" : soon.days === 1 ? "tomorrow" : `in ${soon.days} days`}`, tone: "accent", to: "/people" });
     if (pace.change != null && pace.now > 0 && Math.abs(pace.change) >= 0.15) {
@@ -85,7 +89,7 @@ export default function Today() {
       out.push({ key: "pace", icon: pace.change > 0 ? TrendingUp : TrendingDown, text: `Spending ${pace.change > 0 ? "up" : "down"} ${pct}% on last month so far`, tone: pace.change > 0 ? "warn" : "success", to: "/money" });
     }
     return out;
-  }, [todos, cars, carLogs, things, domains, servers, words, coming, pace, today]);
+  }, [todos, cars, carLogs, things, domains, servers, words, notes, coming, pace, today]);
 
   const brief = briefLine({ next: next ? { title: next.item.title, when: countdown(next.inMs) } : null, open: progress.open, done: progress.done, heads: heads.length });
   const part = partOfDay(nowMs);

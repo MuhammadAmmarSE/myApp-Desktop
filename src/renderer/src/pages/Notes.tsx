@@ -8,11 +8,38 @@ import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bold, CheckSquare, Code, Columns2, Copy, Download, Eye, FileUp, Hash, Heading2, Italic, Link2, List, ListOrdered, MoreHorizontal, NotebookPen, PenLine, Pin, PinOff, Plus, Quote, Search, Trash2, type LucideIcon } from "lucide-react";
+import {
+  Bold,
+  CheckSquare,
+  Code,
+  Columns2,
+  Copy,
+  Download,
+  Eye,
+  FileUp,
+  Hash,
+  Heading2,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  MoreHorizontal,
+  NotebookPen,
+  PenLine,
+  Pin,
+  PinOff,
+  Plus,
+  Quote,
+  Search,
+  Sparkles,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { cleanTags, type Rec } from "@myapp/core";
 import { Button, Chip, Empty, IconButton, Input, Kbd, Menu, Segmented, Tag, toast, Tooltip, useContextMenu } from "@/components/ui";
 import { useList, useRecords } from "@/store/records";
 import { navigate } from "@/lib/router";
+import { INBOX, isInbox, sendToAi } from "@/lib/inbox";
 import { useListNav } from "@/lib/listNav";
 import { bridge, isMac, modKey } from "@/lib/bridge";
 import { ago, readingTime } from "@/lib/format";
@@ -43,6 +70,7 @@ export default function Notes({ params }: { params: Record<string, string> }) {
     return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14);
   }, [notes]);
 
+  const waiting = useMemo(() => notes.filter(isInbox).sort((a, b) => a.created_at - b.created_at), [notes]);
   const shown = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return notes
@@ -69,6 +97,7 @@ export default function Notes({ params }: { params: Record<string, string> }) {
     ctx(e, [
       { label: n.data.pinned ? "Unpin" : "Pin to the top", icon: n.data.pinned ? PinOff : Pin, onSelect: () => useRecords.getState().update<"note">(n.id, { pinned: !n.data.pinned }) },
       { label: "Copy the text", icon: Copy, onSelect: () => (bridge.clipboard.write(`${n.data.title}\n\n${n.data.body}`.trim()), toast("Copied")) },
+      { label: "Send to AI", icon: Sparkles, onSelect: () => sendToAi([n]) },
       { type: "separator" },
       { label: "Delete", icon: Trash2, danger: true, onSelect: () => removeNote(n) },
     ]);
@@ -122,6 +151,18 @@ export default function Notes({ params }: { params: Record<string, string> }) {
             </Button>
           </div>
           <Input icon={Search} value={q} onChange={setQ} placeholder="Search notes" size="sm" aria-label="Search notes" />
+          {waiting.length > 0 && (
+            <div className="mt-2.5 flex items-center gap-2.5 rounded-[12px] bg-accent-soft/60 px-3 py-2.5 shadow-[inset_0_0_0_1px_var(--c-glow)]" data-testid="inbox-banner">
+              <Sparkles size={16} className="shrink-0 text-accent-text" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[12.5px] font-medium">{waiting.length === 1 ? "A note is waiting for the AI" : `${waiting.length} notes are waiting for the AI`}</div>
+                <div className="text-[11.5px] text-text3">Saved while the server was offline</div>
+              </div>
+              <Button size="sm" variant="primary" onClick={() => sendToAi(waiting)}>
+                Send
+              </Button>
+            </div>
+          )}
           {tags.length > 0 && (
             <div className="mt-2.5 flex flex-wrap gap-1">
               {tags.map(([g, n]) => (
@@ -293,6 +334,15 @@ function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated:
   };
   const saveNow = useRef(save);
   saveNow.current = save;
+  // hand the note to the AI: saved first, so it's sent as it reads now
+  const inbox = cleanTags(tagText).includes(INBOX);
+  const hasText = !!(title.trim() || body.trim());
+  const toAi = () => {
+    if (pending.current) clearTimeout(pending.current);
+    saveNow.current();
+    const r = recId.current ? (useRecords.getState().byId[recId.current] as Rec<"note"> | undefined) : undefined;
+    if (r) sendToAi([r]);
+  };
   useEffect(() => {
     if (pending.current) clearTimeout(pending.current);
     pending.current = setTimeout(() => saveNow.current(), 450);
@@ -414,6 +464,9 @@ function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated:
             { value: "read", label: "Read", icon: Eye },
           ]}
         />
+        <Tooltip label="Send to AI: put what it says in the right place">
+          <IconButton icon={Sparkles} label="Send to AI" size="sm" onClick={toAi} disabled={!hasText} tip={false} />
+        </Tooltip>
         <Tooltip label={pinned ? "Unpin" : "Pin to the top"}>
           <IconButton icon={pinned ? PinOff : Pin} label={pinned ? "Unpin" : "Pin"} active={pinned} size="sm" onClick={() => setPinned((p) => !p)} tip={false} />
         </Tooltip>
@@ -439,6 +492,18 @@ function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated:
         {mode !== "read" && (
           <div className={clsx("min-h-0 overflow-y-auto", mode === "split" && "border-r border-line")}>
             <div className="mx-auto max-w-[820px] px-10 pb-10 pt-7">
+              {inbox && hasText && (
+                <div className="mb-5 flex items-center gap-3 rounded-[14px] bg-accent-soft/60 px-4 py-3 shadow-[inset_0_0_0_1px_var(--c-glow)]" data-testid="note-inbox">
+                  <Sparkles size={18} className="shrink-0 text-accent-text" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13.5px] font-semibold">Waiting for the AI</div>
+                    <div className="text-[12.5px] text-text2">{"Saved while the server couldn't be reached. Send it now and it goes where it belongs: Money, to-dos, reminders… This note is removed once that's saved."}</div>
+                  </div>
+                  <Button variant="primary" icon={Sparkles} onClick={toAi}>
+                    Send to AI
+                  </Button>
+                </div>
+              )}
               <input
                 ref={titleRef}
                 value={title}

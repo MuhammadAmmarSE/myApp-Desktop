@@ -14,6 +14,7 @@ import { useSettings } from "@/store/settings";
 import { edit, useUI, type EditKind } from "@/store/ui";
 import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, remember, sortOut } from "@/lib/capture";
 import { navigate, useQuery } from "@/lib/router";
+import { doneWithNotes } from "@/lib/inbox";
 import { isMac, modKey } from "@/lib/bridge";
 import { ApiError } from "@/lib/api";
 import { typing } from "@/lib/keys";
@@ -42,6 +43,8 @@ export default function Capture() {
   const people: PersonRef[] = useMemo(() => peopleRecs.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })), [peopleRecs]);
   const history = readHistory(useRecords((s) => s.meta[HISTORY_KEY]));
   const [text, setText] = useState(query.get("text") || "");
+  // sent from notes (ones saved while the server was offline): once saved, those notes are done
+  const [fromNotes] = useState(() => (query.get("notes") || "").split(",").filter(Boolean));
   const [focused, setFocused] = useState(false);
   const [phase, setPhase] = useState<Phase>("input");
   const [result, setResult] = useState<{ summary: string; reply: string; assistant: boolean }>({ summary: "", reply: "", assistant: false });
@@ -111,15 +114,18 @@ export default function Capture() {
     if (!chosen || phase !== "review") return;
     const s = useRecords.getState();
     let n = 0;
+    const created: string[] = [];
     actions.forEach((a, i) => {
       if (!keep[i] || moved[i]) return;
       for (const d of actionToRecords(a, { currency, people })) {
-        s.create(d.kind, d.data as never);
+        created.push(s.create(d.kind, d.data as never).id);
         n++;
       }
     });
     setPhase("saved");
-    toast.success(n === 1 ? "Saved" : `Saved ${n} things`);
+    const done = n && fromNotes.length ? doneWithNotes(fromNotes, created) : null;
+    if (done?.removed) toast(`${n === 1 ? "Saved" : `Saved ${n} things`}, and the note${done.removed === 1 ? " is" : "s are"} done`, { action: { label: "Undo", run: done.undo } });
+    else toast.success(n === 1 ? "Saved" : `Saved ${n} things`);
     setTimeout(() => {
       setText("");
       reset(false);
@@ -129,6 +135,13 @@ export default function Capture() {
   const saveAsNote = () => {
     const input = (asked.current || text).trim();
     if (!input) return;
+    // it came from notes: they're still there, nothing to add
+    if (fromNotes.length) {
+      toast("Kept as it was, in Notes", { action: { label: "Open", run: () => navigate(`/notes/${fromNotes[0]}`) } });
+      setText("");
+      reset(false);
+      return;
+    }
     const rec = useRecords.getState().create("note", { title: input.split("\n")[0].slice(0, 60), body: input, tags: ["inbox"], pinned: false });
     toast("Saved as a note, tagged inbox", { action: { label: "Open", run: () => navigate(`/notes/${rec.id}`) } });
     setText("");
@@ -279,7 +292,7 @@ export default function Capture() {
                           Try again
                         </Button>
                         <Button icon={NotebookPen} onClick={saveAsNote}>
-                          Save it as a note
+                          {fromNotes.length ? "Keep the note" : "Save it as a note"}
                         </Button>
                       </div>
                     </div>
@@ -363,7 +376,7 @@ export default function Capture() {
                     </Button>
                   ) : !result.reply ? (
                     <Button variant="primary" size="lg" icon={NotebookPen} onClick={saveAsNote}>
-                      Save it as a note
+                      {fromNotes.length ? "Keep the note" : "Save it as a note"}
                     </Button>
                   ) : null}
                   {result.assistant && actions.length > 0 && (
