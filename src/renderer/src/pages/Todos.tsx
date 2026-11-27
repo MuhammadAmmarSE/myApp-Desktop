@@ -3,7 +3,7 @@
 // 6pm #family !" — and shows what it understood before you press Enter. Choose several rows
 // (Ctrl/⌘ or Shift click) to tick, move or delete them together; drag between board columns to
 // change the day.
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { AlarmClock, AlertCircle, ArrowUpDown, CalendarClock, CalendarDays, CheckCheck, CheckSquare, Columns3, Hash, Inbox, LayoutList, ListTodo, Plus, Repeat, Sun, Trash2, type LucideIcon } from "lucide-react";
@@ -92,7 +92,6 @@ export default function Todos() {
   const view: ViewId = (VIEWS.find((v) => v.id === q.get("view"))?.id as ViewId) || "today";
   const tag = q.get("tag");
   const [sort, setSort] = useState<Sort>("smart");
-  const [text, setText] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const ctx = useContextMenu();
 
@@ -177,22 +176,6 @@ export default function Todos() {
     toast(high ? "Marked high priority" : "Back to normal priority", { action: { label: "Undo", run: undoAll(before) } });
   };
 
-  const parsed = text.trim() ? parseQuick(text, today) : null;
-  const add = (full = false) => {
-    if (!parsed || !parsed.title) return;
-    const due = parsed.due ?? (view === "today" ? today : view === "upcoming" ? addDays(today, 1) : null);
-    const data = { title: parsed.title, due, time: parsed.time, priority: view === "high" ? "high" : parsed.priority, tags: [...new Set([...(parsed.tags || []), ...(tag ? [tag] : [])])], repeat: parsed.repeat, done: false, notes: "" } as const;
-    if (full) {
-      edit("todo", null, data);
-      setText("");
-      return;
-    }
-    const rec = useRecords.getState().create("todo", { ...data, tags: [...data.tags] });
-    setText("");
-    nav.setActive(rec.id);
-    toast.success(`Added${due ? ` for ${dayWord(due, today).toLowerCase()}` : ""}`);
-  };
-
   const clearDone = async () => {
     const done = all.filter((t) => t.data.done);
     if (!done.length) return;
@@ -215,6 +198,12 @@ export default function Todos() {
       ]);
     } else ctx(e, todoMenu(t));
   };
+  // the rows get the same two functions every time, so a row redraws only when its own to-do (or
+  // how it's shown) changes; the functions act on the page's latest state
+  const latest = useRef({ click: nav.click, rowMenu });
+  latest.current = { click: nav.click, rowMenu };
+  const onRowClick = useCallback((t: Rec<"todo">, e: React.MouseEvent) => latest.current.click(t, e), []);
+  const onRowMenu = useCallback((t: Rec<"todo">, e: React.MouseEvent) => latest.current.rowMenu(t)(e), []);
 
   return (
     <div className="flex h-full" data-testid="todos">
@@ -295,60 +284,8 @@ export default function Todos() {
             )}
           </motion.header>
 
-          {/* the quick-add line */}
-          {view !== "done" && (
-            <motion.div {...rise(1)} className="mb-5">
-              <div className="group flex items-center gap-2 rounded-[13px] px-3 glass hairline transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--c-accent),0_0_0_3px_color-mix(in_srgb,var(--c-accent)_20%,transparent)]">
-                <Plus size={17} className="shrink-0 text-text3 group-focus-within:text-accent-text" />
-                <input
-                  ref={input}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      add(e.ctrlKey || e.metaKey);
-                    } else if (e.key === "Escape") {
-                      setText("");
-                      input.current?.blur();
-                    }
-                  }}
-                  placeholder='Add a to-do — try "call mum tomorrow 6pm #family !"'
-                  aria-label="Add a to-do"
-                  data-testid="quick-add"
-                  className="h-11 min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-text3"
-                />
-                {!text && <Kbd>N</Kbd>}
-              </div>
-              <AnimatePresence>
-                {parsed && parsed.title && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                    <div className="flex flex-wrap items-center gap-1.5 px-2 pt-2 text-[12px] text-text2" data-testid="quick-preview">
-                      <span className="font-medium text-text">{parsed.title}</span>
-                      {(parsed.due || view === "today" || view === "upcoming") && (
-                        <Tag tone="accent">
-                          <CalendarClock size={11} /> {dayWord(parsed.due ?? (view === "today" ? today : addDays(today, 1)), today)}
-                          {parsed.time ? ` · ${time12(parsed.time)}` : ""}
-                        </Tag>
-                      )}
-                      {parsed.priority === "high" && <Tag tone="danger">High</Tag>}
-                      {parsed.repeat && (
-                        <Tag>
-                          <Repeat size={11} /> {parsed.repeat}
-                        </Tag>
-                      )}
-                      {parsed.tags.map((g) => (
-                        <Tag key={g}>#{g}</Tag>
-                      ))}
-                      <span className="ml-auto text-text3">
-                        <Kbd>↵</Kbd> add · <Kbd>{modKey()} ↵</Kbd> more options
-                      </span>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
+          {/* the quick-add line: its own component, so typing in it redraws only the line */}
+          {view !== "done" && <QuickAdd view={view} tag={tag} today={today} inputRef={input} onAdded={nav.setActive} />}
 
           {!list.length ? (
             <Card>
@@ -359,7 +296,7 @@ export default function Todos() {
               />
             </Card>
           ) : layout === "board" && view !== "done" ? (
-            <Board groups={groups} today={today} nav={nav} rowMenu={rowMenu} />
+            <Board groups={groups} today={today} nav={nav} onRowClick={onRowClick} onRowMenu={onRowMenu} />
           ) : (
             <div className="flex flex-col gap-4" data-testid="todo-list">
               {groups.map((g, gi) => (
@@ -384,8 +321,8 @@ export default function Todos() {
                           showDate={view !== "upcoming" && g.key !== "today"}
                           active={nav.active === t.id}
                           selected={nav.selected.has(t.id)}
-                          onClick={(e) => nav.click(t, e)}
-                          onMenu={rowMenu(t)}
+                          onRowClick={onRowClick}
+                          onRowMenu={onRowMenu}
                         />
                       ))}
                     </AnimatePresence>
@@ -427,7 +364,83 @@ export default function Todos() {
 }
 
 // ---------------- board: a column per when, drag between them ----------------
-function Board({ groups, today, nav, rowMenu }: { groups: Group[]; today: string; nav: ReturnType<typeof useListNav<Rec<"todo">>>; rowMenu: (t: Rec<"todo">) => (e: React.MouseEvent) => void }) {
+// The line that adds a to-do as you type it ("call mum tomorrow 6pm #family !"), with what it read
+// shown underneath. It keeps its own text: in the page, every key redrew every to-do on it.
+function QuickAdd({ view, tag, today, inputRef, onAdded }: { view: ViewId; tag: string | null; today: string; inputRef: React.RefObject<HTMLInputElement | null>; onAdded: (id: string) => void }) {
+  const [text, setText] = useState("");
+  const input = inputRef;
+  const parsed = text.trim() ? parseQuick(text, today) : null;
+  const add = (full = false) => {
+    if (!parsed || !parsed.title) return;
+    const due = parsed.due ?? (view === "today" ? today : view === "upcoming" ? addDays(today, 1) : null);
+    const data = { title: parsed.title, due, time: parsed.time, priority: view === "high" ? "high" : parsed.priority, tags: [...new Set([...(parsed.tags || []), ...(tag ? [tag] : [])])], repeat: parsed.repeat, done: false, notes: "" } as const;
+    if (full) {
+      edit("todo", null, data);
+      setText("");
+      return;
+    }
+    const rec = useRecords.getState().create("todo", { ...data, tags: [...data.tags] });
+    setText("");
+    onAdded(rec.id);
+    toast.success(`Added${due ? ` for ${dayWord(due, today).toLowerCase()}` : ""}`);
+  };
+
+  return (
+    <motion.div {...rise(1)} className="mb-5">
+      <div className="group flex items-center gap-2 rounded-[13px] px-3 glass hairline transition-shadow focus-within:shadow-[inset_0_0_0_1px_var(--c-accent),0_0_0_3px_color-mix(in_srgb,var(--c-accent)_20%,transparent)]">
+        <Plus size={17} className="shrink-0 text-text3 group-focus-within:text-accent-text" />
+        <input
+          ref={input}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add(e.ctrlKey || e.metaKey);
+            } else if (e.key === "Escape") {
+              setText("");
+              input.current?.blur();
+            }
+          }}
+          placeholder='Add a to-do — try "call mum tomorrow 6pm #family !"'
+          aria-label="Add a to-do"
+          data-testid="quick-add"
+          className="h-11 min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-text3"
+        />
+        {!text && <Kbd>N</Kbd>}
+      </div>
+      <AnimatePresence>
+        {parsed && parsed.title && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="flex flex-wrap items-center gap-1.5 px-2 pt-2 text-[12px] text-text2" data-testid="quick-preview">
+              <span className="font-medium text-text">{parsed.title}</span>
+              {(parsed.due || view === "today" || view === "upcoming") && (
+                <Tag tone="accent">
+                  <CalendarClock size={11} /> {dayWord(parsed.due ?? (view === "today" ? today : addDays(today, 1)), today)}
+                  {parsed.time ? ` · ${time12(parsed.time)}` : ""}
+                </Tag>
+              )}
+              {parsed.priority === "high" && <Tag tone="danger">High</Tag>}
+              {parsed.repeat && (
+                <Tag>
+                  <Repeat size={11} /> {parsed.repeat}
+                </Tag>
+              )}
+              {parsed.tags.map((g) => (
+                <Tag key={g}>#{g}</Tag>
+              ))}
+              <span className="ml-auto text-text3">
+                <Kbd>↵</Kbd> add · <Kbd>{modKey()} ↵</Kbd> more options
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function Board({ groups, today, nav, onRowClick, onRowMenu }: { groups: Group[]; today: string; nav: ReturnType<typeof useListNav<Rec<"todo">>>; onRowClick: (t: Rec<"todo">, e: React.MouseEvent) => void; onRowMenu: (t: Rec<"todo">, e: React.MouseEvent) => void }) {
   const [over, setOver] = useState<string | null>(null);
   // every column is there to drop on, even when empty
   const columns: Group[] = ["late", "today", "tomorrow", "week", "later", "none"].map((k) => {
@@ -485,7 +498,7 @@ function Board({ groups, today, nav, rowMenu }: { groups: Group[]; today: string
           <div className="flex flex-col">
             <AnimatePresence initial={false}>
               {c.items.map((t, i) => (
-                <TodoRow key={t.id} t={t} today={today} index={i} compact draggable showDate={c.key !== "today"} active={nav.active === t.id} selected={nav.selected.has(t.id)} onClick={(e) => nav.click(t, e)} onMenu={rowMenu(t)} />
+                <TodoRow key={t.id} t={t} today={today} index={i} compact draggable showDate={c.key !== "today"} active={nav.active === t.id} selected={nav.selected.has(t.id)} onRowClick={onRowClick} onRowMenu={onRowMenu} />
               ))}
             </AnimatePresence>
             {!c.items.length && <div className="mx-2 my-3 rounded-[10px] border border-dashed border-line py-6 text-center text-[12px] text-text3">Drop here</div>}

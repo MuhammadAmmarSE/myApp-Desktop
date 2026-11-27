@@ -390,7 +390,7 @@ async function scenario(name, fn, always = false) {
     if (workdir && !fs.existsSync(path.join(workdir, "scratch.txt"))) throw new Error("the refused command ran anyway");
   });
 
-  await scenario("settings: theme, wallpaper and text size apply at once", async () => {
+  await scenario("settings: theme, wallpaper, effects and text size apply at once", async () => {
     await go("/settings?section=appearance");
     const accent = () => win.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--c-accent").trim());
     const was = await accent();
@@ -398,6 +398,22 @@ async function scenario(name, fn, always = false) {
     await until("the accent changes", async () => (await accent()) !== was);
     await win.locator('[data-bg="peaks"]').click();
     await until("the wallpaper shows", async () => (await win.locator('[data-wallpaper="peaks"] [style*="url("]').count()) === 2);
+    // effects: Full blurs the wallpaper behind the glass, Light doesn't; Auto follows the graphics card
+    const glass = () => win.evaluate(() => ({ effects: document.documentElement.dataset.effects, filter: getComputedStyle(document.documentElement).getPropertyValue("--glass-filter").trim() }));
+    const effect = (name) => win.locator('[data-testid="effects"] [role="tab"]', { hasText: name }).click();
+    await effect("Full");
+    await until("the glass blurs the wallpaper", async () => {
+      const g = await glass();
+      return g.effects === "full" && g.filter.startsWith("blur(");
+    });
+    await effect("Light");
+    await until("light effects: no blur", async () => {
+      const g = await glass();
+      return g.effects === "light" && g.filter === "none";
+    });
+    await effect("Auto");
+    const gpu = await win.locator('[data-testid="effects"]').getAttribute("data-gpu");
+    await until("Auto follows the graphics card", async () => (await glass()).effects === (gpu === "software" ? "light" : "full"));
     await win.getByRole("button", { name: "110%" }).click();
     await until("zoomed", async () => Math.abs((await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.getTitle().includes("Quick"))?.webContents.getZoomFactor())) - 1.1) < 0.01);
     await win.getByRole("button", { name: "100%" }).click();

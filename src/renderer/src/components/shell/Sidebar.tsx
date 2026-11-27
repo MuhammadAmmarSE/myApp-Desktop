@@ -22,15 +22,9 @@ export function Sidebar() {
   const set = useSettings((s) => s.set);
   const badges = useBadges();
   const user = useAuth((s) => s.user);
-  const signOut = useAuth((s) => s.signOut);
   const name = useSettings((s) => s.name) || user?.name || "";
-  const sync = useSync();
-  const dirty = useRecords((s) => s.dirtyCount);
   const mod = modKey();
   const active = (to: string) => (to === "/" ? path === "/" : path === to || path.startsWith(`${to}/`));
-
-  const syncLine = sync.syncing ? "Syncing…" : sync.offline ? "Offline · will sync when back" : sync.error ? sync.error : dirty ? `${dirty} change${dirty === 1 ? "" : "s"} to send` : sync.lastAt ? `Synced ${ago(sync.lastAt)}` : "Not synced yet";
-  const syncTone = sync.error ? "bg-danger" : sync.offline || dirty ? "bg-warn" : "bg-success";
 
   return (
     <motion.nav
@@ -40,8 +34,8 @@ export function Sidebar() {
       transition={{ duration: 0.24, ease: ease.standard }}
       className="glass relative z-20 flex h-full shrink-0 flex-col border-r border-line"
     >
-      <div className={clsx("flex items-center gap-2.5 px-4 pb-3 pt-3", collapsed && "justify-center px-0")}>
-        <BrandMark size={30} spin />
+      <div className={clsx("brand-hover flex items-center gap-2.5 px-4 pb-3 pt-3", collapsed && "justify-center px-0")}>
+        <BrandMark size={30} />
         {!collapsed && (
           <div className="min-w-0 flex-1">
             <div className="font-display text-[17px] font-semibold leading-none tracking-[-0.01em]">Redline</div>
@@ -117,42 +111,7 @@ export function Sidebar() {
       </div>
 
       <div className={clsx("border-t border-line p-2.5", collapsed && "px-2")}>
-        <Menu
-          placement="top-start"
-          width={230}
-          items={[
-            { type: "label", label: syncLine },
-            { label: "Sync now", icon: RefreshCw, kbd: `${mod} R`, onSelect: () => void syncNow().then((ok) => ok && toast.success("Up to date")) },
-            { label: "New to-do", icon: Plus, kbd: `${mod} N`, onSelect: () => navigate("/todos?new=1") },
-            { label: "Settings", icon: Settings, kbd: `${mod} ,`, onSelect: () => navigate("/settings") },
-            { type: "separator" },
-            {
-              label: "Sign out",
-              icon: LogOut,
-              danger: true,
-              onSelect: async () => {
-                const ok = await confirmDialog({ title: "Sign out of Redline?", body: "Everything stays on your server. This computer's copy is cleared, and comes back when you sign in again.", confirm: "Sign out", danger: true });
-                if (ok) await signOut();
-              },
-            },
-          ]}
-          trigger={(open) => (
-            <button type="button" onClick={open} aria-label="Account" className={clsx("flex w-full items-center gap-2.5 rounded-[10px] p-1.5 text-left transition-colors hover:bg-hover", collapsed && "justify-center")}>
-              <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full accent-grad text-[12px] font-semibold text-on-accent">
-                {name ? initials(name) : <UserRound size={15} />}
-                <span className={clsx("absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[var(--c-surface)]", syncTone, sync.syncing && "animate-pulse")} />
-              </span>
-              {!collapsed && (
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-text">{name || user?.email || "You"}</span>
-                  <span className="block truncate text-[11px] text-text3" data-testid="sync-line">
-                    {syncLine}
-                  </span>
-                </span>
-              )}
-            </button>
-          )}
-        />
+        <Account collapsed={collapsed} name={name} />
         <button
           type="button"
           onClick={() => set({ sidebar: collapsed ? "full" : "icons" })}
@@ -164,5 +123,58 @@ export function Sidebar() {
         </button>
       </div>
     </motion.nav>
+  );
+}
+
+// you and the sync line: their own component, so a sync (every minute, and after each change)
+// redraws this corner only, not the whole sidebar
+function Account({ collapsed, name }: { collapsed: boolean; name: string }) {
+  const user = useAuth((s) => s.user);
+  const signOut = useAuth((s) => s.signOut);
+  const syncing = useSync((s) => s.syncing);
+  const offline = useSync((s) => s.offline);
+  const error = useSync((s) => s.error);
+  const lastAt = useSync((s) => s.lastAt);
+  const dirty = useRecords((s) => s.dirtyCount);
+  const mod = modKey();
+  const syncLine = syncing ? "Syncing…" : offline ? "Offline · will sync when back" : error ? error : dirty ? `${dirty} change${dirty === 1 ? "" : "s"} to send` : lastAt ? `Synced ${ago(lastAt)}` : "Not synced yet";
+  const syncTone = error ? "bg-danger" : offline || dirty ? "bg-warn" : "bg-success";
+  return (
+    <Menu
+      placement="top-start"
+      width={230}
+      items={[
+        { type: "label", label: syncLine },
+        { label: "Sync now", icon: RefreshCw, kbd: `${mod} R`, onSelect: () => void syncNow().then((ok) => ok && toast.success("Up to date")) },
+        { label: "New to-do", icon: Plus, kbd: `${mod} N`, onSelect: () => navigate("/todos?new=1") },
+        { label: "Settings", icon: Settings, kbd: `${mod} ,`, onSelect: () => navigate("/settings") },
+        { type: "separator" },
+        {
+          label: "Sign out",
+          icon: LogOut,
+          danger: true,
+          onSelect: async () => {
+            const ok = await confirmDialog({ title: "Sign out of Redline?", body: "Everything stays on your server. This computer's copy is cleared, and comes back when you sign in again.", confirm: "Sign out", danger: true });
+            if (ok) await signOut();
+          },
+        },
+      ]}
+      trigger={(open) => (
+        <button type="button" onClick={open} aria-label="Account" className={clsx("flex w-full items-center gap-2.5 rounded-[10px] p-1.5 text-left transition-colors hover:bg-hover", collapsed && "justify-center")}>
+          <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full accent-grad text-[12px] font-semibold text-on-accent">
+            {name ? initials(name) : <UserRound size={15} />}
+            <span className={clsx("absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[var(--c-surface)]", syncTone, syncing && "animate-pulse")} />
+          </span>
+          {!collapsed && (
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium text-text">{name || user?.email || "You"}</span>
+              <span className="block truncate text-[11px] text-text3" data-testid="sync-line">
+                {syncLine}
+              </span>
+            </span>
+          )}
+        </button>
+      )}
+    />
   );
 }

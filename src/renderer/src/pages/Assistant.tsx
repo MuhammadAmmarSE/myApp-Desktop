@@ -96,9 +96,10 @@ function ChatList({ current }: { current: number | null }) {
     try {
       const r = await api<{ runs: Run[]; more?: boolean; counts?: ChatCounts }>("GET", `/operator/runs?filter=${filter}&limit=${PAGE}&offset=${offset}&q=${encodeURIComponent(q.trim())}`);
       if (t !== ticket.current) return;
-      setRuns((prev) => (offset ? [...prev, ...r.runs] : r.runs));
+      // the check every 10 s mostly brings back the same list: keep the one shown then
+      setRuns((prev) => (offset ? [...prev, ...r.runs] : JSON.stringify(prev) === JSON.stringify(r.runs) ? prev : r.runs));
       setMore(!!r.more);
-      if (r.counts) setCounts(r.counts);
+      if (r.counts) setCounts((prev) => (JSON.stringify(prev) === JSON.stringify(r.counts) ? prev : r.counts || null));
     } catch (e) {
       if (t === ticket.current) useOperator.setState(availabilityOf(e));
     } finally {

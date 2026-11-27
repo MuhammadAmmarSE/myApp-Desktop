@@ -56,7 +56,10 @@ const webPreferences = {
   sandbox: true,
   nodeIntegration: false,
   spellcheck: true,
-  backgroundThrottling: false, // reminders and the assistant keep listening in the background
+  // Hidden, minimised or in the tray, the page slows down and draws nothing. Reminders fire from
+  // the main process (reminders.ts) and the assistant listens over the network, so neither needs
+  // the page awake; with throttling off, a hidden window kept drawing every frame.
+  backgroundThrottling: true,
 };
 
 export function createMainWindow(opts: { show: boolean }) {

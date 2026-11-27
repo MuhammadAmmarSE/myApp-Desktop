@@ -46,8 +46,36 @@ main process (Node)                       screens (Chromium, sandboxed)
   `myApp/tools/wallpapers/render.js --desktop`) or plain.
 - Motion is eased (`theme/motion.ts`), never springy; "Calm" in Settings (or the system's
   reduced motion) takes out what isn't needed.
+- Effects (Settings > Appearance): Full blurs a wallpaper behind the glass and moves it with the
+  pointer; Light does neither. Auto is Light when Chromium draws without the graphics card (a
+  blocked driver, a remote desktop, a virtual machine; the main process reads it from
+  `app.getGPUFeatureStatus()` and passes it as `AppInfo.gpu`), Full otherwise
+  (`lib/effects.ts`).
 - Every form field's label belongs to its control (`Field` gives the first control inside it an
   id), so screen readers read it and clicking it focuses the control.
+
+## Staying light
+
+What made the app slow on Windows, and the rules that keep it fast. `npm run perf` measures all of
+it and fails when a rule is broken.
+
+- **Nothing moves forever.** No endless animation in the chrome: the brand mark wobbles on
+  hover, status pulses beat a few times and stop, the orb only moves while it listens or thinks.
+  Each endless animation kept the page painting 60 times a second.
+- **Nothing moves behind your back.** `lib/activity.ts` says whether the window is in front
+  (visible and focused; `<html data-active>`). The Aurora's drift, the wallpaper's depth and the
+  orb stop when it isn't, and the window is throttled when hidden (`backgroundThrottling`):
+  reminders fire from the main process, and the assistant listens over the network.
+- **Blur only what needs it.** A backdrop filter redraws what's behind every card each time
+  anything near it changes. Only a wallpaper is blurred (it has edges); the Aurora is soft light
+  already and plain glass is solid, so neither is (`--glass-filter` in `theme/index.ts`). The
+  Aurora is a small canvas painted 8 times a second, not CSS blurs moving every frame.
+- **Draw only what changed.** The shell's work (sync, badges, the Quick window's context) lives
+  in `ShellEffects`, which draws nothing, so a record changing doesn't redraw every page. Rows
+  are `memo` with stable handlers; the quick-add line owns its own text; a note's preview
+  follows the typing a beat behind (`useDeferredValue`); polled data is only set when it
+  changed. Stores are read with narrow selectors.
+- **Pages open at once.** The new page fades in without waiting for the old one to fade out.
 
 ## Keyboard
 
@@ -65,6 +93,6 @@ this computer's settings.
 
 ## Testing
 
-`npm test` (unit) and `npm run e2e` (real Electron against the real server on a test database);
-see the README. The e2e scenarios check the server's database after each step, so a pass means
+`npm test` (unit), `npm run e2e` (real Electron against the real server on a test database) and
+`npm run perf` (how hard the app works); see the README. The e2e scenarios check the server's database after each step, so a pass means
 the change was made, kept and synced.

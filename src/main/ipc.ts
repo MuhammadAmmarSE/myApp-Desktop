@@ -34,6 +34,17 @@ const deviceName = () => {
   return `${kind}${host ? ` (${host})` : ""}`.slice(0, 120);
 };
 
+// Chromium draws without the graphics card when its driver is blocked (common on older or remote
+// Windows PCs): blur and full-window movement then cost real CPU, so the screens use lighter effects.
+function gpuMode(): "hardware" | "software" {
+  try {
+    const status = app.getGPUFeatureStatus() as unknown as Record<string, string>;
+    return /^enabled/.test(String(status.gpu_compositing || "")) ? "hardware" : "software";
+  } catch {
+    return "hardware";
+  }
+}
+
 export function applyPrefs(p: Prefs, changed: Partial<Prefs>): string | undefined {
   let error: string | undefined;
   if ("startAtLogin" in changed || "startHidden" in changed) error = applyStartAtLogin(p.startAtLogin, p.startHidden);
@@ -58,6 +69,7 @@ export function registerIpc() {
     packaged: app.isPackaged,
     dataDir: app.getPath("userData"),
     touchId: touchIdAvailable(),
+    gpu: gpuMode(),
   }));
   ipcMain.handle(CH.openExternal, async (_e, url: string) => {
     if (typeof url !== "string" || !/^(https?:\/\/|mailto:|tel:)/i.test(url)) return false;

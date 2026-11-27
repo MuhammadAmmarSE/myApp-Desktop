@@ -8,25 +8,33 @@ import { warrantyHeadsUp } from "@/lib/things";
 import type { BadgeKey } from "@/lib/nav";
 
 export function useBadges(today = isoDate()): Record<BadgeKey, { n: number; tone: "accent" | "danger" | "muted" }> {
-  const lists = useRecords((s) => s.lists);
+  // only the lists the counts are made from: a note or a money entry changing doesn't count again
+  // (or redraw the sidebar)
+  const todo = useRecords((s) => s.lists.todo);
+  const event = useRecords((s) => s.lists.event);
+  const item = useRecords((s) => s.lists.item);
+  const date = useRecords((s) => s.lists.date);
+  const car = useRecords((s) => s.lists.car);
+  const carLog = useRecords((s) => s.lists.car_log);
+  const thing = useRecords((s) => s.lists.thing);
   const approvals = useOperator((s) => s.approvals.length);
   return useMemo(() => {
-    const open = lists.todo.filter((t) => !t.data.done);
+    const open = todo.filter((t) => !t.data.done);
     const overdue = open.filter((t) => t.data.due && t.data.due < today).length;
     const dueToday = open.filter((t) => t.data.due === today).length;
-    const events = lists.event.filter((e) => e.data.date === today).length;
-    const buy = lists.item.filter((i) => !i.data.done && i.data.today && i.data.mode === "store").length;
-    const dates = lists.date.filter((d) => daysBetween(today, nextOccurrence(d.data.month, d.data.day, today)) <= 7).length;
-    const car = carHeadsUp(lists.car, lists.car_log, today).length;
-    const things = warrantyHeadsUp(lists.thing, today) ? 1 : 0;
+    const events = event.filter((e) => e.data.date === today).length;
+    const buy = item.filter((i) => !i.data.done && i.data.today && i.data.mode === "store").length;
+    const dates = date.filter((d) => daysBetween(today, nextOccurrence(d.data.month, d.data.day, today)) <= 7).length;
+    const carN = carHeadsUp(car, carLog, today).length;
+    const things = warrantyHeadsUp(thing, today) ? 1 : 0;
     return {
       today: { n: dueToday + events, tone: "muted" },
       overdue: { n: overdue || dueToday, tone: overdue ? "danger" : "muted" },
       buy: { n: buy, tone: "muted" },
       dates: { n: dates, tone: "accent" },
-      car: { n: car, tone: "danger" },
+      car: { n: carN, tone: "danger" },
       things: { n: things, tone: "accent" },
       approvals: { n: approvals, tone: "danger" },
     };
-  }, [lists, approvals, today]);
+  }, [todo, event, item, date, car, carLog, thing, approvals, today]);
 }

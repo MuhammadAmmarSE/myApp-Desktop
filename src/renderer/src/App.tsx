@@ -1,7 +1,7 @@
 // The app: load what is on this computer, apply the theme, then sign-in or the pages. Commands
 // from the tray, the menu, notifications and Quick capture arrive here.
 import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { actionToRecords, type Kind } from "@myapp/core";
 import type { Command } from "@shared/ipc";
 import { useApplyTheme } from "@/theme";
@@ -10,6 +10,7 @@ import { bridge } from "@/lib/bridge";
 import { match, navigate, useLocation } from "@/lib/router";
 import { useGlobalKeys } from "@/lib/keys";
 import { startAlerts } from "@/lib/alerts";
+import { startActivity } from "@/lib/activity";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 import { useAuth } from "@/store/auth";
@@ -80,14 +81,14 @@ function Pages() {
     if (!Page) navigate("/", { replace: true });
   }, [Page]);
   if (!Page) return null;
+  // the new page fades in straight away: waiting for the old one to fade out first held every
+  // click back by its exit
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div key={sectionOf(path)} variants={pageMotion} initial="initial" animate="enter" exit="exit" className="h-full">
-        <Suspense fallback={<div className="grid h-full place-items-center"><Working label="Opening" /></div>}>
-          <Page params={params} />
-        </Suspense>
-      </motion.div>
-    </AnimatePresence>
+    <motion.div key={sectionOf(path)} variants={pageMotion} initial="initial" animate="enter" className="h-full">
+      <Suspense fallback={<div className="grid h-full place-items-center"><Working label="Opening" /></div>}>
+        <Page params={params} />
+      </Suspense>
+    </motion.div>
   );
 }
 
@@ -114,7 +115,10 @@ function handleCommand(cmd: Command) {
   }
 }
 
-function Shell() {
+// What the shell keeps in step: sync, reminders, commands from the main process, the Quick
+// capture window's context and the taskbar badge. It draws nothing, so the records and settings it
+// follows don't redraw the shell (and every page in it) when they change.
+function ShellEffects() {
   useGlobalKeys();
   const badges = useBadges();
   const currency = useSettings((s) => s.currency);
@@ -131,9 +135,15 @@ function Shell() {
     bridge.quick.setContext({ currency, themeId, motion, people: people.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })) });
   }, [currency, themeId, motion, people]);
   // late to-dos on the dock / taskbar
-  useEffect(() => bridge.badge(badges.overdue.tone === "danger" ? badges.overdue.n : 0), [badges.overdue]);
+  const late = badges.overdue.tone === "danger" ? badges.overdue.n : 0;
+  useEffect(() => bridge.badge(late), [late]);
+  return null;
+}
+
+function Shell() {
   return (
     <div className="relative flex h-full flex-col">
+      <ShellEffects />
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
@@ -163,6 +173,7 @@ function Splash() {
 
 export function App() {
   useApplyTheme();
+  useEffect(() => startActivity(), []);
   const status = useAuth((s) => s.status);
   const [ready, setReady] = useState(false);
   const { path } = useLocation();

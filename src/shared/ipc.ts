@@ -78,6 +78,7 @@ export interface AppInfo {
   packaged: boolean;
   dataDir: string;
   touchId: boolean; // this Mac can ask for Touch ID
+  gpu: "hardware" | "software"; // whether Chromium draws with the graphics card (software when its driver is blocked)
 }
 
 export interface WindowState {

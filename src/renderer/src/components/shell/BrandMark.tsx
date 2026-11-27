@@ -1,5 +1,8 @@
 // Redline's mark: the faceted gem with its orbit, from the app icon, tinted with the current theme's
 // colour (the facets are the accent mixed lighter or darker, so every theme gets its own gem).
+// `spin` (the start-up screen only) turns it slowly; elsewhere it wobbles once when you point at it
+// (.brand-gem in app.css). Never an endless animation in the sidebar: an SVG animates on the main
+// thread, and the sidebar is glass, so it would redraw the window every frame on every page.
 import { motion } from "motion/react";
 import { useReduced } from "@/theme";
 
@@ -36,9 +39,10 @@ export function BrandMark({ size = 28, glow = true, spin = false }: { size?: num
         <ellipse cx="512" cy="512" rx="300" ry="92" fill="none" stroke="var(--c-accent2)" strokeWidth="16" opacity="0.35" />
       </g>
       <motion.g
+        className={spin ? undefined : "brand-gem"}
         animate={spin && !reduced ? { rotate: [0, 6, -4, 0] } : undefined}
         transition={spin ? { duration: 9, repeat: Infinity, ease: "easeInOut" } : undefined}
-        style={{ originX: "512px", originY: "512px" }}
+        style={spin ? { originX: "512px", originY: "512px" } : undefined}
       >
         {FACETS.map(([pts, fill]) => (
           <polygon key={pts} points={pts} fill={fill} stroke="rgba(255,255,255,0.18)" strokeWidth="4" strokeLinejoin="round" />

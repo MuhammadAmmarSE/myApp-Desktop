@@ -39,7 +39,7 @@ export function ApprovalsHost() {
           aria-label={`The assistant needs your yes: ${first.summary}`}
         >
           <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full accent-grad text-on-accent">
-            <span className="absolute inset-0 rounded-full accent-grad" style={{ animation: "pulse-ring 1.8s var(--ease-out) infinite" }} />
+            <span className="absolute inset-0 rounded-full accent-grad" style={{ opacity: 0, animation: "pulse-ring 1.8s var(--ease-out) 8" }} />
             <Fingerprint size={17} className="relative" />
           </span>
           <span className="min-w-0 flex-1">

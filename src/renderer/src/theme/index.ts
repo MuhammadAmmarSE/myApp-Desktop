@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { themeById, type Theme } from "@myapp/core";
 import { useSettings, type Background } from "@/store/settings";
+import { useLightEffects } from "@/lib/effects";
 
 export const withAlpha = (hex: string, a: number) => {
   if (!hex.startsWith("#")) return hex;
@@ -22,16 +23,24 @@ const VIZ: Record<string, { spent: string; earned: string }> = {
 };
 export const vizOf = (id: string) => VIZ[id] || VIZ.redline;
 
-export function themeVars(theme: Theme, background: Background): Record<string, string> {
+export function themeVars(theme: Theme, background: Background, light = false): Record<string, string> {
   const c = theme.colors;
   const dark = theme.mode === "dark";
   const vars: Record<string, string> = {};
   for (const [k, v] of Object.entries(c)) vars[`--c-${k}`] = v;
   for (const [k, v] of Object.entries(theme.orb)) vars[`--orb-${k}`] = v;
-  const see = background === "none" ? 1 : background === "aurora" ? (dark ? 0.62 : 0.74) : dark ? 0.72 : 0.8;
+  const wallpaper = background !== "none" && background !== "aurora";
+  // light effects keep a wallpaper readable without the blur by letting less of it through
+  const see = background === "none" ? 1 : background === "aurora" ? (dark ? 0.62 : 0.74) : light ? (dark ? 0.86 : 0.9) : dark ? 0.72 : 0.8;
   vars["--glass"] = withAlpha(c.surface, see);
   vars["--glass-strong"] = withAlpha(c.surface, Math.min(1, see + 0.2));
-  vars["--glass-blur"] = background === "none" ? "0px" : "22px";
+  // Only a wallpaper is blurred behind the glass: it has edges that would show through. With no
+  // background the glass is solid, and the Aurora is soft light already, so blurring it changes
+  // nothing you can see. A backdrop filter (even blur(0)) redraws what's behind every card each
+  // time anything near it changes: over the Aurora that was most of the app's idle work.
+  const blur = wallpaper && !light;
+  vars["--glass-filter"] = blur ? "blur(22px) saturate(140%)" : "none";
+  vars["--glass-filter-strong"] = blur ? "blur(31px) saturate(150%)" : "none";
   vars["--hover"] = dark ? "rgba(255,255,255,0.055)" : "rgba(10,10,30,0.05)";
   vars["--press"] = dark ? "rgba(255,255,255,0.09)" : "rgba(10,10,30,0.085)";
   vars["--au1"] = withAlpha(c.accent, dark ? 0.55 : 0.32);
@@ -47,15 +56,16 @@ export function themeVars(theme: Theme, background: Background): Record<string, 
   return vars;
 }
 
-export function applyTheme(themeId: string, background: Background, motion: "full" | "reduced", density: "comfortable" | "compact") {
+export function applyTheme(themeId: string, background: Background, motion: "full" | "reduced", density: "comfortable" | "compact", light = false) {
   const theme = themeById(themeId);
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(themeVars(theme, background))) root.style.setProperty(k, v);
+  for (const [k, v] of Object.entries(themeVars(theme, background, light))) root.style.setProperty(k, v);
   root.dataset.mode = theme.mode;
   root.dataset.theme = theme.id;
   root.dataset.motion = motion;
   root.dataset.density = density;
   root.dataset.bg = background;
+  root.dataset.effects = light ? "light" : "full";
   return theme;
 }
 
@@ -64,9 +74,10 @@ export function useApplyTheme() {
   const background = useSettings((s) => s.background);
   const motion = useSettings((s) => s.motion);
   const density = useSettings((s) => s.density);
+  const light = useLightEffects();
   useEffect(() => {
-    applyTheme(themeId, background, motion, density);
-  }, [themeId, background, motion, density]);
+    applyTheme(themeId, background, motion, density, light);
+  }, [themeId, background, motion, density, light]);
 }
 
 export const useTheme = () => themeById(useSettings((s) => s.themeId));

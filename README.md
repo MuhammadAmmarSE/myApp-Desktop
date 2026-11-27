@@ -39,6 +39,7 @@ npm run typecheck
 npm test             # unit tests (vitest)
 npm run build        # into out/
 npm run e2e          # real-app scenarios, see below
+npm run perf         # CPU, React renders, page opening and memory, see below
 ```
 
 It talks to the server set at sign-in (`REDLINE_API_URL` sets the default). The server's address
@@ -56,6 +57,15 @@ can be changed on the sign-in screen under "Use a different server".
 
   `test/e2e/server.js [port] --seed` on its own starts that server with sample data, for trying
   the app by hand.
+- `npm run perf`: the built app on the same setup, measured. CPU of every process sitting still
+  and with the pointer moving (per background, and on the orb pages), React commits and what
+  rendered (idle, pointer, typing in a note and in quick-add, opening every page), how long each
+  page takes to open, and memory over several rounds of every page (heap, DOM nodes, listeners
+  after garbage collection). It fails over its limits: React drawing while nothing happens,
+  memory that keeps growing. `REDLINE_PROFILE=1 npm run build` first keeps component names
+  readable; `PERF_EFFECTS=full|light` measures one of the effects; `PERF_ONLY=cpu,react,pages,memory`
+  some parts; `PERF_OUT=file.json` writes the report. `test/perf/animations.js` lists what keeps
+  moving on a quiet page, and `test/perf/endless.js` which components carry an endless animation.
 
 ## Installers
 

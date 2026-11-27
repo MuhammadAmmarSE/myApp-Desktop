@@ -52,7 +52,18 @@ export default function Capture() {
   const box = useRef<HTMLTextAreaElement>(null);
   const asked = useRef("");
 
-  const orb: OrbState = phase === "thinking" ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : focused || text ? "listening" : "idle";
+  // the orb breathes while you type (and a moment after), then sits still: the box has the focus
+  // the whole time you're on this page, and an orb that moves the whole time keeps the window busy
+  const [writing, setWriting] = useState(false);
+  const typed = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onType = (v: string) => {
+    setText(v);
+    setWriting(true);
+    if (typed.current) clearTimeout(typed.current);
+    typed.current = setTimeout(() => setWriting(false), 2500);
+  };
+  useEffect(() => () => void (typed.current && clearTimeout(typed.current)), []);
+  const orb: OrbState = phase === "thinking" ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : writing ? "listening" : "idle";
   const chosen = keep.filter((k, i) => k && !moved[i]).length;
   const cards = useMemo(() => actions.map((a) => describe(a, currency)), [actions, currency]);
   const reviewing = phase === "review" || phase === "saved";
@@ -188,7 +199,7 @@ export default function Capture() {
               <Textarea
                 ref={box}
                 value={text}
-                onChange={setText}
+                onChange={onType}
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
                 placeholder="e.g. Pay the electricity bill by Friday, and remind me to call the plumber tomorrow at 10"

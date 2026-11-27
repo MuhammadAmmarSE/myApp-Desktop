@@ -84,7 +84,7 @@ export const useOperator = create<State>((set, get) => ({
   loadStatus: async (refresh) => {
     try {
       const s = await api<OperatorStatus>("GET", `/operator/status${refresh ? "?refresh=1" : ""}`, undefined, { timeoutMs: 45000 });
-      set({ status: s, availability: s.enabled ? "ready" : "paused", message: s.enabled ? "" : "You switched the assistant off." });
+      setIfChanged({ status: s, availability: s.enabled ? "ready" : "paused", message: s.enabled ? "" : "You switched the assistant off." });
     } catch (e) {
       set(availabilityOf(e));
     }
@@ -94,7 +94,7 @@ export const useOperator = create<State>((set, get) => ({
       const r = await api<{ runs: Run[]; counts?: ChatCounts }>("GET", "/operator/runs?limit=12");
       // an older server ignores the filter and would list every chat as a favourite
       const f = r.counts ? await api<{ runs: Run[] }>("GET", "/operator/runs?filter=starred&limit=6") : { runs: [] };
-      set({ runs: r.runs, favourites: f.runs, counts: r.counts || null, upToDate: !!r.counts, runsLoaded: true, availability: "ready" });
+      setIfChanged({ runs: r.runs, favourites: f.runs, counts: r.counts || null, upToDate: !!r.counts, runsLoaded: true, availability: "ready" });
     } catch (e) {
       set(availabilityOf(e));
     }
@@ -109,6 +109,15 @@ export const useOperator = create<State>((set, get) => ({
   },
   reset: () => set({ availability: "unknown", message: "", status: null, approvals: [], runs: [], favourites: [], counts: null, upToDate: null, runsLoaded: false }),
 }));
+
+// The checks every few seconds mostly bring back what's already here: only store what differs, so
+// the screens that show it don't redraw for nothing.
+function setIfChanged(next: Partial<State>) {
+  const cur = useOperator.getState() as unknown as Record<string, unknown>;
+  const diff: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(next)) if (JSON.stringify(cur[k]) !== JSON.stringify(v)) diff[k] = v;
+  if (Object.keys(diff).length) useOperator.setState(diff as Partial<State>);
+}
 
 export const SERVER_UPDATE = "Your server needs an update for this: update myapp-backend on it and restart it.";
 // a route an older server doesn't have answers its catch-all 404; say what that means
@@ -167,7 +176,7 @@ export function watchApprovals(): () => void {
       try {
         const r = await api<{ approvals: Approval[] }>("GET", `/operator/approvals?wait=25&known=${known}`, undefined, { timeoutMs: 35000 });
         if (!alive) break;
-        useOperator.setState({ approvals: r.approvals, availability: "ready" });
+        setIfChanged({ approvals: r.approvals, availability: "ready" });
       } catch (e) {
         if (!alive) break;
         const a = availabilityOf(e);

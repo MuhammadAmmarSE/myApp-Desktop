@@ -1,5 +1,5 @@
 // Rows used on several pages: a to-do (tick it, open it, right-click for more) and a list item.
-import { forwardRef } from "react";
+import { forwardRef, memo } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
 import { AlertCircle, CalendarDays, Copy, ExternalLink, Flag, Pencil, Repeat, ShoppingBag, Trash2 } from "lucide-react";
@@ -53,9 +53,12 @@ export function todoMenu(t: Rec<"todo">): MenuItem[] {
   ];
 }
 
-type TodoRowProps = { t: Rec<"todo">; today: string; active?: boolean; selected?: boolean; showDate?: boolean; onClick?: (e: React.MouseEvent) => void; onMenu?: (e: React.MouseEvent) => void; compact?: boolean; index?: number; draggable?: boolean };
+// onRowClick / onRowMenu say which to-do; pass the same functions every time (the page keeps them
+// stable) and a row redraws only when its own to-do, or how it's shown, changes
+type TodoRowProps = { t: Rec<"todo">; today: string; active?: boolean; selected?: boolean; showDate?: boolean; onRowClick?: (t: Rec<"todo">, e: React.MouseEvent) => void; onRowMenu?: (t: Rec<"todo">, e: React.MouseEvent) => void; compact?: boolean; index?: number; draggable?: boolean };
 
-export const TodoRow = forwardRef<HTMLDivElement, TodoRowProps>(function TodoRow({ t, today, active, selected, showDate = true, onClick, onMenu, compact, index = 0, draggable }, ref) {
+export const TodoRow = memo(
+  forwardRef<HTMLDivElement, TodoRowProps>(function TodoRow({ t, today, active, selected, showDate = true, onRowClick, onRowMenu, compact, index = 0, draggable }, ref) {
   const ctx = useContextMenu();
   const d = t.data;
   const late = !d.done && d.due && d.due < today;
@@ -76,8 +79,8 @@ export const TodoRow = forwardRef<HTMLDivElement, TodoRowProps>(function TodoRow
       data-todo={t.id}
       data-active={active || undefined}
       data-selected={selected || undefined}
-      onClick={onClick || (() => edit("todo", t))}
-      onContextMenu={onMenu || ((e) => ctx(e, todoMenu(t)))}
+      onClick={onRowClick ? (e) => onRowClick(t, e) : () => edit("todo", t)}
+      onContextMenu={onRowMenu ? (e) => onRowMenu(t, e) : (e) => ctx(e, todoMenu(t))}
       className={clsx(
         "group relative flex items-start gap-3 rounded-[11px] px-3 transition-colors",
         compact ? "py-2" : "py-2.5",
@@ -106,7 +109,8 @@ export const TodoRow = forwardRef<HTMLDivElement, TodoRowProps>(function TodoRow
       </div>
     </motion.div>
   );
-});
+}),
+);
 
 export function ItemRow({ i, onToggle, active, selected, index = 0, onClick, draggable }: { i: Rec<"item">; onToggle: () => void; active?: boolean; selected?: boolean; index?: number; onClick?: (e: React.MouseEvent) => void; draggable?: boolean }) {
   const ctx = useContextMenu();

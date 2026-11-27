@@ -51,7 +51,8 @@ function EmptyArt({ icon: Icon }: { icon: LucideIcon }) {
         <circle cx="56" cy="56" r="54" fill="url(#empty-glow)" />
         <circle cx="56" cy="56" r="42" fill="none" stroke="var(--c-line)" strokeDasharray="2 5" />
         <circle cx="56" cy="56" r="30" fill="none" stroke="var(--c-line)" />
-        <motion.circle cx="56" cy="14" r="2.5" fill="var(--c-accent)" animate={{ rotate: 360 }} transition={{ duration: 18, repeat: Infinity, ease: "linear" }} style={{ originX: "56px", originY: "56px" }} />
+        {/* one turn as it appears, then still */}
+        <motion.circle cx="56" cy="14" r="2.5" fill="var(--c-accent)" initial={{ rotate: -120 }} animate={{ rotate: 0 }} transition={{ duration: 1.6, ease: [0.2, 0, 0, 1] }} style={{ originX: "56px", originY: "56px" }} />
       </svg>
       <div className="relative grid h-14 w-14 place-items-center rounded-[18px] border border-line bg-surface2 text-accent-text shadow-[var(--shadow-card)]">
         <Icon size={24} strokeWidth={1.8} />

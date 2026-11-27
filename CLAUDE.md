@@ -32,7 +32,10 @@ Read [README.md](README.md) for what it does and [docs/DESKTOP.md](docs/DESKTOP.
 - Use the kit in `components/ui` (Button, Input, Field, Select, Segmented, Dialog, Menu, Toast,
   Empty, Skeleton…), `components/forms/Editors.tsx` for every record editor, `lib/format` for
   dates, times and money. A form field goes in a `Field` (its label then belongs to the control).
-- Motion from `theme/motion.ts` only: eased, no springs, reduced motion respected.
+- Motion from `theme/motion.ts` only: eased, no springs, reduced motion respected. Nothing
+  animates forever, ambient motion stops when the window isn't in front (`lib/activity.ts`), and
+  nothing new blurs what's behind it every frame (docs/DESKTOP.md → Staying light). Check with
+  `npm run perf`.
 - Lists use `useListNav` (keyboard, multi-select) and `BulkBar`; anything removed can be put
   back with Undo.
 - Pure logic goes in `lib/` with a unit test in `test/unit/`.

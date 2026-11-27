@@ -78,10 +78,11 @@ export function ProgressRing({
   );
 }
 
-// a soft pulse behind something that is live (the next thing, a running task)
-export const Pulse = ({ color = "var(--c-accent)", size = 8 }: { color?: string; size?: number }) => (
+// a soft pulse behind something that is live (the next thing, a running task): a few beats when it
+// appears, then still. An endless one keeps the window redrawing for as long as it's on screen.
+export const Pulse = ({ color = "var(--c-accent)", size = 8, beats = 4 }: { color?: string; size?: number; beats?: number }) => (
   <span className="relative inline-flex" style={{ width: size, height: size }}>
-    <span className="absolute inset-0 rounded-full" style={{ background: color, animation: "pulse-ring 1.8s var(--ease-out) infinite" }} />
+    <span className="absolute inset-0 rounded-full" style={{ background: color, opacity: 0, animation: `pulse-ring 1.8s var(--ease-out) ${beats}` }} />
     <span className="relative rounded-full" style={{ width: size, height: size, background: color }} />
   </span>
 );

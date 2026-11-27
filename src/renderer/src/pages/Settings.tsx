@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { Bell, Bot, Check, CircleAlert, CircleCheck, Cloud, Database, Download, HardDriveDownload, Info, Keyboard, Laptop, LogOut, Monitor, Moon, Palette, Power, RefreshCw, ShieldCheck, Smartphone, Sparkles, Sun, Upload, User as UserIcon, type LucideIcon } from "lucide-react";
+import { Bell, Bot, Check, CircleAlert, CircleCheck, Cloud, Database, Download, Gauge, HardDriveDownload, Info, Keyboard, Laptop, LogOut, Monitor, Moon, Palette, Power, RefreshCw, ShieldCheck, Smartphone, Sparkles, Sun, Upload, User as UserIcon, type LucideIcon } from "lucide-react";
 import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
 import type { AppInfo, Prefs } from "@shared/ipc";
 import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
@@ -20,6 +20,7 @@ import { useUI } from "@/store/ui";
 import { api } from "@/lib/api";
 import { bridge, isMac } from "@/lib/bridge";
 import { describeAccelerator, toAccelerator } from "@/lib/accelerator";
+import { useGpu } from "@/lib/effects";
 import { exportAll, importRecords, readBackup } from "@/lib/exporter";
 import { setQuery, useQuery } from "@/lib/router";
 import { ago, plural } from "@/lib/format";
@@ -142,8 +143,16 @@ function ThemeCard({ t, on, onPick }: { t: Theme; on: boolean; onPick: () => voi
   );
 }
 
+// what the Effects setting means right now, in words
+function effectsSub(effects: "auto" | "full" | "light", gpu: "hardware" | "software") {
+  if (effects === "light") return "No blur behind the glass and still wallpapers: smoother on slower computers";
+  if (effects === "full") return "Blur behind the glass and wallpapers that move with the pointer";
+  return gpu === "software" ? "Auto: light, because this computer is drawing without its graphics card" : "Auto: full, the graphics card is drawing";
+}
+
 function Appearance() {
   const s = useSettings();
+  const gpu = useGpu();
   const { prefs, change } = usePrefs();
   const backs: { id: Background; name: string }[] = [{ id: "aurora", name: "Aurora" }, ...WALLPAPERS.map((w) => ({ id: w.id as Background, name: w.name })), { id: "none", name: "Plain" }];
   return (
@@ -183,6 +192,11 @@ function Appearance() {
       <Card>
         <Row title="Motion" sub="Calm takes out the movement that isn't needed" icon={Sparkles}>
           <Segmented size="sm" value={s.motion} onChange={(v) => s.set({ motion: v })} options={[{ value: "full", label: "Full" }, { value: "reduced", label: "Calm" }]} />
+        </Row>
+        <Row title="Effects" sub={effectsSub(s.effects, gpu)} icon={Gauge}>
+          <div data-testid="effects" data-gpu={gpu}>
+            <Segmented size="sm" value={s.effects} onChange={(v) => s.set({ effects: v })} options={[{ value: "auto", label: "Auto" }, { value: "full", label: "Full" }, { value: "light", label: "Light" }]} />
+          </div>
         </Row>
         <Row title="Density" sub="How much fits in lists" icon={Monitor}>
           <Segmented size="sm" value={s.density} onChange={(v) => s.set({ density: v })} options={[{ value: "comfortable", label: "Roomy" }, { value: "compact", label: "Compact" }]} />

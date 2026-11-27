@@ -21,6 +21,7 @@ export default defineConfig({
     root: resolve(__dirname, "src/renderer"),
     resolve: { alias: { ...core, ...shared, "@": resolve(__dirname, "src/renderer/src") } },
     plugins: [react(), tailwindcss()],
-    build: { rollupOptions: { input: { index: resolve(__dirname, "src/renderer/index.html") } } },
+    // REDLINE_PROFILE=1 keeps component names readable (test/perf/run.js reports them)
+    build: { minify: !process.env.REDLINE_PROFILE, rollupOptions: { input: { index: resolve(__dirname, "src/renderer/index.html") } } },
   },
 });

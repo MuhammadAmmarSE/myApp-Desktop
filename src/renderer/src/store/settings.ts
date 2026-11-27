@@ -12,6 +12,7 @@ export interface Settings {
   name: string;
   background: Background;
   motion: "full" | "reduced";
+  effects: "auto" | "full" | "light"; // light: no blur behind the glass, no wallpaper depth
   density: "comfortable" | "compact";
   sidebar: "full" | "icons";
   weekStart: 0 | 1; // Sunday or Monday
@@ -28,6 +29,7 @@ export const DEFAULTS: Settings = {
   name: "",
   background: "aurora",
   motion: "full",
+  effects: "auto",
   density: "comfortable",
   sidebar: "full",
   weekStart: 1,

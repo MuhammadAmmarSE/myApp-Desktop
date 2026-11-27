@@ -3,7 +3,7 @@
 // and links; lists carry on when you press Enter; checkboxes tick from the preview. Notes save as
 // you type. Open a .md or .txt file (or drop one on the list) to make it a note, and save any note
 // out as a .md file.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import ReactMarkdown from "react-markdown";
@@ -63,6 +63,19 @@ export default function Notes({ params }: { params: Record<string, string> }) {
     if (id === n.id) navigate("/notes", { replace: true });
     toast(`Deleted "${(n.data.title || "Untitled").slice(0, 40)}"`, { action: { label: "Undo", run: () => before && useRecords.getState().restore(before) } });
   };
+  // the rows get the same two functions every time, so saving the note you're writing redraws only
+  // its own row; the functions act on the page's latest state
+  const rowMenu = (n: Rec<"note">, e: React.MouseEvent) =>
+    ctx(e, [
+      { label: n.data.pinned ? "Unpin" : "Pin to the top", icon: n.data.pinned ? PinOff : Pin, onSelect: () => useRecords.getState().update<"note">(n.id, { pinned: !n.data.pinned }) },
+      { label: "Copy the text", icon: Copy, onSelect: () => (bridge.clipboard.write(`${n.data.title}\n\n${n.data.body}`.trim()), toast("Copied")) },
+      { type: "separator" },
+      { label: "Delete", icon: Trash2, danger: true, onSelect: () => removeNote(n) },
+    ]);
+  const latest = useRef({ click: nav.click, menu: rowMenu });
+  latest.current = { click: nav.click, menu: rowMenu };
+  const onRowClick = useCallback((n: Rec<"note">, e: React.MouseEvent) => latest.current.click(n, e), []);
+  const onRowMenu = useCallback((n: Rec<"note">, e: React.MouseEvent) => latest.current.menu(n, e), []);
 
   const importText = (name: string, text: string) => {
     const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim();
@@ -122,51 +135,9 @@ export default function Notes({ params }: { params: Record<string, string> }) {
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-6">
           {shown.length ? (
             <AnimatePresence initial={false}>
-              {shown.map((n, i) => {
-                const tc = taskCount(n.data.body);
-                const open = n.id === id;
-                return (
-                  <motion.button
-                    key={n.id}
-                    layout="position"
-                    type="button"
-                    data-note={n.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.015 }}
-                    onClick={(e) => nav.click(n, e)}
-                    onContextMenu={(e) =>
-                      ctx(e, [
-                        { label: n.data.pinned ? "Unpin" : "Pin to the top", icon: n.data.pinned ? PinOff : Pin, onSelect: () => useRecords.getState().update<"note">(n.id, { pinned: !n.data.pinned }) },
-                        { label: "Copy the text", icon: Copy, onSelect: () => (bridge.clipboard.write(`${n.data.title}\n\n${n.data.body}`.trim()), toast("Copied")) },
-                        { type: "separator" },
-                        { label: "Delete", icon: Trash2, danger: true, onSelect: () => removeNote(n) },
-                      ])
-                    }
-                    className={clsx("mb-0.5 block w-full rounded-[11px] px-3 py-2.5 text-left transition-colors", open ? "bg-accent-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--c-accent)_35%,transparent)]" : nav.selected.has(n.id) ? "bg-accent-soft/50" : nav.active === n.id ? "bg-hover" : "hover:bg-hover")}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {n.data.pinned && <Pin size={12} className="shrink-0 text-accent-text" />}
-                      <span className={clsx("truncate text-[13.5px] font-semibold", !n.data.title && "text-text3")}>{n.data.title || "Untitled"}</span>
-                      <span className="ml-auto shrink-0 text-[11px] text-text3">{ago(n.updated_at)}</span>
-                    </div>
-                    <div className="mt-0.5 line-clamp-2 text-[12.5px] text-text2">{snippet(n.data.body) || <span className="text-text3">Nothing written yet</span>}</div>
-                    {(tc.total > 0 || (n.data.tags || []).length > 0) && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                        {tc.total > 0 && (
-                          <Tag tone={tc.done === tc.total ? "success" : "default"}>
-                            <CheckSquare size={10} /> {tc.done}/{tc.total}
-                          </Tag>
-                        )}
-                        {(n.data.tags || []).slice(0, 3).map((g) => (
-                          <Tag key={g}>#{g}</Tag>
-                        ))}
-                      </div>
-                    )}
-                  </motion.button>
-                );
-              })}
+              {shown.map((n, i) => (
+                <NoteRow key={n.id} n={n} index={i} open={n.id === id} selected={nav.selected.has(n.id)} active={nav.active === n.id} onRowClick={onRowClick} onRowMenu={onRowMenu} />
+              ))}
             </AnimatePresence>
           ) : (
             <Empty compact icon={NotebookPen} title={q || tag ? "No notes match" : "No notes yet"} body={q || tag ? "Try other words." : "Write your first one, or drop a .md file here."} />
@@ -231,6 +202,46 @@ const TOOLS: { icon: LucideIcon; label: string; kbd?: string; run: (t: string, s
   { icon: Code, label: "Code", run: (t, s) => wrap(t, s, "`", "`", "code") },
   { icon: Link2, label: "Link", kbd: "K", run: (t, s) => link(t, s) },
 ];
+
+// One note in the list. It redraws only when its own note changes (or it's opened, chosen or
+// moved to), not every time the note being written is saved.
+const NoteRow = memo(function NoteRow({ n, index, open, selected, active, onRowClick, onRowMenu }: { n: Rec<"note">; index: number; open: boolean; selected: boolean; active: boolean; onRowClick: (n: Rec<"note">, e: React.MouseEvent) => void; onRowMenu: (n: Rec<"note">, e: React.MouseEvent) => void }) {
+  const tc = useMemo(() => taskCount(n.data.body), [n.data.body]);
+  const text = useMemo(() => snippet(n.data.body), [n.data.body]);
+  return (
+    <motion.button
+      layout="position"
+      type="button"
+      data-note={n.id}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, delay: Math.min(index, 12) * 0.015 }}
+      onClick={(e) => onRowClick(n, e)}
+      onContextMenu={(e) => onRowMenu(n, e)}
+      className={clsx("mb-0.5 block w-full rounded-[11px] px-3 py-2.5 text-left transition-colors", open ? "bg-accent-soft shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--c-accent)_35%,transparent)]" : selected ? "bg-accent-soft/50" : active ? "bg-hover" : "hover:bg-hover")}
+    >
+      <div className="flex items-center gap-1.5">
+        {n.data.pinned && <Pin size={12} className="shrink-0 text-accent-text" />}
+        <span className={clsx("truncate text-[13.5px] font-semibold", !n.data.title && "text-text3")}>{n.data.title || "Untitled"}</span>
+        <span className="ml-auto shrink-0 text-[11px] text-text3">{ago(n.updated_at)}</span>
+      </div>
+      <div className="mt-0.5 line-clamp-2 text-[12.5px] text-text2">{text || <span className="text-text3">Nothing written yet</span>}</div>
+      {(tc.total > 0 || (n.data.tags || []).length > 0) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          {tc.total > 0 && (
+            <Tag tone={tc.done === tc.total ? "success" : "default"}>
+              <CheckSquare size={10} /> {tc.done}/{tc.total}
+            </Tag>
+          )}
+          {(n.data.tags || []).slice(0, 3).map((g) => (
+            <Tag key={g}>#{g}</Tag>
+          ))}
+        </div>
+      )}
+    </motion.button>
+  );
+});
 
 function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated: (id: string) => void; onDelete: (n: Rec<"note">) => void }) {
   const rec = useRecords((s) => (id ? (s.byId[id] as Rec<"note"> | undefined) : undefined));
@@ -343,12 +354,20 @@ function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated:
     }
   };
 
+  // the toolbar's buttons get one function that stays the same, so typing doesn't redraw them
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const onTool = useCallback((run: (t: string, s: { start: number; end: number }) => Edit) => toolRef.current(run), []);
+  // the preview follows the text a moment behind: reading a long note as markdown on every key held
+  // the typing back; React draws it as soon as there's a gap (and not at all while it's hidden)
+  const shown = useDeferredValue(mode === "write" ? "" : body);
   const rt = readingTime(`${title} ${body}`);
   const tc = taskCount(body);
-  let taskN = -1;
-  const preview = (
+  const preview = useMemo(() => {
+    let taskN = -1;
+    return (
     <div className="prose-redline px-10 py-6" data-testid="note-preview">
-      {body.trim() ? (
+      {shown.trim() ? (
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
@@ -370,21 +389,20 @@ function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated:
             },
           }}
         >
-          {body}
+          {shown}
         </ReactMarkdown>
       ) : (
         <p className="text-text3">Nothing to show yet.</p>
       )}
     </div>
-  );
+    );
+  }, [shown]);
 
   return (
     <div className="flex h-full flex-col">
       {/* toolbar */}
       <div className="flex items-center gap-1 border-b border-line px-6 py-2">
-        {TOOLS.map((t) => (
-          <IconButton key={t.label} icon={t.icon} label={t.label} kbd={t.kbd ? `${modKey()} ${t.kbd}` : undefined} size="sm" onClick={() => tool(t.run)} />
-        ))}
+        <ToolButtons onTool={onTool} />
         <div className="flex-1" />
         <Segmented<Mode>
           size="sm"
@@ -469,6 +487,17 @@ function NoteEditor({ id, onCreated, onDelete }: { id: string | null; onCreated:
     </div>
   );
 }
+
+// bold, italic, lists and the rest: drawn once, not on every key
+const ToolButtons = memo(function ToolButtons({ onTool }: { onTool: (run: (t: string, s: { start: number; end: number }) => Edit) => void }) {
+  return (
+    <>
+      {TOOLS.map((t) => (
+        <IconButton key={t.label} icon={t.icon} label={t.label} kbd={t.kbd ? `${modKey()} ${t.kbd}` : undefined} size="sm" onClick={() => onTool(t.run)} />
+      ))}
+    </>
+  );
+});
 
 // a body field that grows with what's written, so the page scrolls as one
 function TextArea({ value, onChange, onKeyDown, areaRef }: { value: string; onChange: (v: string) => void; onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void; areaRef: React.RefObject<HTMLTextAreaElement | null> }) {
