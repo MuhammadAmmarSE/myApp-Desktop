@@ -4,8 +4,8 @@
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
-import { AlarmClock, ArrowRight, BellRing, Cake, CalendarDays, CalendarHeart, CarFront, CheckSquare, Clock, Copy, Plus, ShieldCheck, ShoppingCart, Sparkles, TrendingDown, TrendingUp, Wallet, type LucideIcon } from "lucide-react";
-import { addDays, briefLine, countdown, dayProgress, dayTimeline, dueBy, greeting, isOpenTodo, isoDate, moneyPace, monthTotals, nextUp, partOfDay, sortTodos, todoProgress, upcoming, WEEKDAYS_LONG, type TimelineItem } from "@myapp/core";
+import { AlarmClock, ArrowRight, BellRing, Cake, CalendarDays, CalendarHeart, CarFront, CheckSquare, Clock, Copy, Globe, Languages, Plus, ShieldCheck, ShoppingCart, Sparkles, TrendingDown, TrendingUp, Wallet, type LucideIcon } from "lucide-react";
+import { addDays, briefLine, dueWords, countdown, dayProgress, dayTimeline, dueBy, greeting, isOpenTodo, isoDate, moneyPace, monthTotals, nextUp, partOfDay, sortTodos, todoProgress, upcoming, WEEKDAYS_LONG, type TimelineItem } from "@myapp/core";
 import { Button, Card, CardTitle, Empty, IconButton, Page, ProgressRing, CountUp, Pulse, Tag, toast } from "@/components/ui";
 import { Sparkline } from "@/components/charts";
 import { ItemRow, TodoRow, toggleTodo } from "@/components/rows";
@@ -15,6 +15,7 @@ import { useAuth } from "@/store/auth";
 import { edit } from "@/store/ui";
 import { carHeadsUp } from "@/lib/car";
 import { warrantyHeadsUp } from "@/lib/things";
+import { workHeadsUp } from "@/lib/work";
 import { useNow } from "@/lib/clock";
 import { navigate } from "@/lib/router";
 import { bridge, modKey } from "@/lib/bridge";
@@ -40,6 +41,9 @@ export default function Today() {
   const cars = useList("car");
   const carLogs = useList("car_log");
   const things = useList("thing");
+  const domains = useList("domain");
+  const servers = useList("server");
+  const words = useList("word");
   const currency = useSettings((s) => s.currency);
   const name = useSettings((s) => s.name) || useAuth((s) => s.user?.name) || "";
   const [text, setText] = useState("");
@@ -70,6 +74,10 @@ export default function Today() {
     for (const h of carHeadsUp(cars, carLogs, today).slice(0, 2)) out.push({ key: `car-${h.what}-${h.car}`, icon: CarFront, text: `${h.car}: ${h.words}`, tone: h.days != null && h.days < 0 ? "danger" : "warn", to: "/car" });
     const w = warrantyHeadsUp(things, today);
     if (w) out.push({ key: "warranty", icon: ShieldCheck, text: `${w.name} warranty ${w.days === 0 ? "ends today" : `ends in ${w.days} days`}`, tone: "warn", to: "/things" });
+    const renew = workHeadsUp(domains, servers, today);
+    if (renew) out.push({ key: "renew", icon: Globe, text: renew, tone: /expired|was due/.test(renew) ? "danger" : "warn", to: "/work" });
+    const toGo = dueWords(words, today).length;
+    if (toGo >= 5) out.push({ key: "words", icon: Languages, text: `${toGo} words to go over`, tone: "accent", to: "/interests?tab=words" });
     const soon = coming.find((u) => u.kind === "date" && u.days <= 3);
     if (soon) out.push({ key: "date", icon: CalendarHeart, text: `${soon.title} ${soon.days === 0 ? "today" : soon.days === 1 ? "tomorrow" : `in ${soon.days} days`}`, tone: "accent", to: "/people" });
     if (pace.change != null && pace.now > 0 && Math.abs(pace.change) >= 0.15) {
@@ -77,7 +85,7 @@ export default function Today() {
       out.push({ key: "pace", icon: pace.change > 0 ? TrendingUp : TrendingDown, text: `Spending ${pace.change > 0 ? "up" : "down"} ${pct}% on last month so far`, tone: pace.change > 0 ? "warn" : "success", to: "/money" });
     }
     return out;
-  }, [todos, cars, carLogs, things, coming, pace, today]);
+  }, [todos, cars, carLogs, things, domains, servers, words, coming, pace, today]);
 
   const brief = briefLine({ next: next ? { title: next.item.title, when: countdown(next.inMs) } : null, open: progress.open, done: progress.done, heads: heads.length });
   const part = partOfDay(nowMs);

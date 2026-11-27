@@ -1,7 +1,7 @@
 # Redline for the desktop
 
 The desktop app of Redline: your day, to-dos, lists, notes, saved text, money, people and their
-dates, your car, your things and the assistant, on Windows, Linux and macOS, in sync with the
+dates, your car, your things, your work, your interests and the assistant, on Windows, Linux and macOS, in sync with the
 phone app (repo `myApp`) through your own Redline server (repo `myapp-backend`).
 
 Built with Electron, React and Tailwind. It works offline: everything is kept on this computer
@@ -11,7 +11,7 @@ and sent to the server when it can reach it.
 
 | Page | What it does |
 |---|---|
-| **Today** | Greeting and the time, the next thing coming up, today's to-dos with a progress ring, your day as a timeline, what's coming up in 30 days, heads-ups (late to-dos, car papers, warranties, spending) |
+| **Today** | Greeting and the time, the next thing coming up, today's to-dos with a progress ring, your day as a timeline, what's coming up in 30 days, heads-ups (late to-dos, car papers, warranties, domains and servers to renew, words to go over, spending) |
 | **Capture** | Write what someone told you in plain words, in any language. The AI sorts it into to-dos, list items, events, reminders, money, notes, saved text and dates; you check each card, edit or untick it, and only what you keep is saved. Ctrl/⌘ Enter sorts it out and saves |
 | **Quick capture** | The same in a small window over any app: Ctrl/⌘ ⇧ Space from anywhere (you can change the shortcut) |
 | **Calendar** | Month, week, day and agenda. Events, reminders, dated to-dos, birthdays and anniversaries, car papers and services, warranties. Drag to another day or time, double-click to add |
@@ -23,6 +23,8 @@ and sent to the server when it can reach it.
 | **People & dates** | People with their phone, notes and things to remember (sizes, likes); birthdays and anniversaries counting down |
 | **My car** | Fill-ups, services and papers; km per litre fill by fill, cost per km, monthly cost; what needs doing (papers to renew, services due) |
 | **My things** | What you own with its warranty and receipt; warranties ending; the price can go into Money |
+| **Work** | Projects (for clients or your own) with the hours this week and in all, what's owed and what's been paid; a project's own page with a timer (S starts and stops it; stopping opens "Log time" with the minutes), its hours week by week and its log. Clients, servers (one click copies the ssh command) and domains; renewals coming up with a one-click "Renewed". A payment can go into Money as income. T logs time anywhere on the page |
+| **Interests** | What you practise, against a weekly goal, with the days in a row and 16 weeks as a heat map; +15 / +30 in a click. Words as flashcards (type "word = meaning"; R goes over the due ones: Space shows, → knew it, ← didn't), games, books and shows, and a wishlist whose "Got it" can save it in Money and My things |
 | **Assistant** | Ask it to do things on your server and accounts. Every risky step waits for you: your password (or Touch ID on a Mac). Chats are kept, starred, archived. Photos can be sent. Replies can be read aloud |
 | **Settings** | Six themes (the phone's), the Aurora background or a 3D wallpaper, motion, density, text size; reminders and quiet hours; start at login, start in the tray, close to the tray, the Quick capture shortcut; the assistant; your account and devices; sync, export and import |
 

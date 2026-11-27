@@ -1,7 +1,7 @@
 // What Search looks through: every record, every page, and things you can do (add something,
 // switch the theme, sync). Each entry says how it looks and what opening it does; the ranking is
 // core's `search`, the same as on the phone.
-import { THEMES, isoDate, type Kind, type Rec, type SearchDoc } from "@myapp/core";
+import { THEMES, isoDate, minutesInWords, type Kind, type Rec, type SearchDoc } from "@myapp/core";
 import { dayWord, money, monthDay, shortDate, time12 } from "./format";
 import { logTitle } from "./car";
 import type { EditKind } from "@/store/ui";
@@ -9,11 +9,7 @@ import type { EditKind } from "@/store/ui";
 export type Group = "do" | Kind;
 export type Entry = SearchDoc & { group: Group; detail?: string; open: Open; kbd?: string };
 export type Open =
-  | { to: string }
-  | { edit: EditKind; rec?: Rec | null; preset?: Record<string, unknown> }
-  | { copy: string; rec: Rec<"clip"> }
-  | { set: Record<string, unknown>; say: string }
-  | { run: "sync" | "quick" | "shortcuts" | "export" | "capture" };
+  { to: string } | { edit: EditKind; rec?: Rec | null; preset?: Record<string, unknown> } | { copy: string; rec: Rec<"clip"> } | { set: Record<string, unknown>; say: string } | { run: "sync" | "quick" | "shortcuts" | "export" | "capture" };
 
 export const GROUP_WORD: Record<Group, string> = {
   do: "Go to and do",
@@ -29,7 +25,6 @@ export const GROUP_WORD: Record<Group, string> = {
   thing: "My things",
   car: "Cars",
   car_log: "Car log",
-  // kept in step with the phone; these records sync here but have no page on the desktop yet
   project: "Projects",
   client: "Clients",
   work_log: "Work log",
@@ -41,7 +36,31 @@ export const GROUP_WORD: Record<Group, string> = {
   media: "Games, books & shows",
   wish: "Wishlist",
 };
-export const GROUP_ORDER: Group[] = ["do", "todo", "item", "note", "clip", "event", "reminder", "date", "person", "money", "thing", "car", "car_log"];
+export const GROUP_ORDER: Group[] = [
+  "do",
+  "todo",
+  "item",
+  "note",
+  "clip",
+  "event",
+  "reminder",
+  "date",
+  "person",
+  "money",
+  "thing",
+  "car",
+  "car_log",
+  "project",
+  "client",
+  "work_log",
+  "server",
+  "domain",
+  "interest",
+  "practice",
+  "word",
+  "media",
+  "wish",
+];
 
 // pages and actions, always there
 export function commands(mod = "Ctrl"): Entry[] {
@@ -58,6 +77,13 @@ export function commands(mod = "Ctrl"): Entry[] {
     page("people", "People and dates", "/people", "birthdays anniversaries family contacts", `${mod} 7`),
     page("car", "My car", "/car", "fuel petrol service insurance papers vehicle"),
     page("things", "My things", "/things", "warranty receipts gadgets appliances"),
+    page("work", "Work", "/work", "projects clients hours time freelance invoices paid"),
+    page("servers", "Servers", "/work?tab=servers", "vps hosting ssh bill"),
+    page("domains", "Domains", "/work?tab=domains", "website renew expire registrar dns"),
+    page("interests", "Interests", "/interests", "hobbies practice streak language music gym"),
+    page("words", "Words", "/interests?tab=words", "flashcards vocabulary learn language review"),
+    page("media", "Games, books and shows", "/interests?tab=media", "playing reading watching series movies"),
+    page("wishlist", "Wishlist", "/interests?tab=wishlist", "want buy one day gift"),
     page("assistant", "Assistant", "/assistant", "ai server github help chats", `${mod} 8`),
     page("settings", "Settings", "/settings", "preferences account theme background shortcuts", `${mod} ,`),
     act("capture", "Capture with AI", "tell ai add write quick", { run: "capture" }, "Action", `${mod} Shift C`),
@@ -73,6 +99,14 @@ export function commands(mod = "Ctrl"): Entry[] {
     act("date", "Add a date", "birthday anniversary remember create", { edit: "date" }),
     act("person", "Add a person", "family friend contact create", { edit: "person" }),
     act("thing", "Add something you own", "warranty receipt create", { edit: "thing" }),
+    act("time", "Log time", "work hours project timer", { edit: "work_log", preset: { type: "time" } }),
+    act("paid", "Got paid", "work payment client income", { edit: "work_log", preset: { type: "payment" } }),
+    act("project", "New project", "work client create", { edit: "project" }),
+    act("domain", "Add a domain", "website renew create", { edit: "domain" }),
+    act("server", "Add a server", "vps hosting create", { edit: "server" }),
+    act("practice", "Log practice", "interest hobby minutes streak", { edit: "practice" }),
+    act("word", "Add a word", "flashcard vocabulary learn create", { edit: "word" }),
+    act("wish", "Add to the wishlist", "want buy gift create", { edit: "wish" }),
     act("sync", "Sync now", "refresh upload download server", { run: "sync" }, "Action", `${mod} R`),
     act("export", "Export my data", "backup download json csv", { run: "export" }),
     act("shortcuts", "Keyboard shortcuts", "keys help hotkeys", { run: "shortcuts" }, "Action", `${mod} /`),
@@ -90,6 +124,10 @@ export function commands(mod = "Ctrl"): Entry[] {
 export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency: string; people: Map<string, string>; cars: Map<string, string> }): Entry[] {
   const today = isoDate();
   const out: Entry[] = [];
+  const named = (list: { id: string; data: { name?: string } }[]) => new Map(list.map((r) => [r.id, r.data.name || ""]));
+  const projects = named(lists.project);
+  const clients = named(lists.client);
+  const interests = named(lists.interest);
   for (const t of lists.todo)
     out.push({
       id: t.id,
@@ -186,6 +224,104 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       keywords: `${l.data.type} ${l.data.car_id ? ctx.cars.get(l.data.car_id) || "" : ""}`,
       detail: [shortDate(l.data.date, today), l.data.amount ? money(l.data.amount, ctx.currency) : "", l.data.car_id ? ctx.cars.get(l.data.car_id) : ""].filter(Boolean).join(" · "),
       open: { edit: "car_log", rec: l },
+    });
+  for (const p of lists.project)
+    out.push({
+      id: p.id,
+      kind: "project",
+      group: "project",
+      title: p.data.name,
+      body: [p.data.notes, p.data.repo, p.data.url].filter(Boolean).join(" "),
+      keywords: [p.data.status, p.data.client_id ? clients.get(p.data.client_id) : ""].filter(Boolean).join(" "),
+      detail: [p.data.client_id ? `For ${clients.get(p.data.client_id) || "a client"}` : "Your own", p.data.status].join(" · "),
+      open: { to: `/work/${p.id}` },
+    });
+  for (const c of lists.client)
+    out.push({
+      id: c.id,
+      kind: "client",
+      group: "client",
+      title: c.data.name,
+      body: c.data.notes,
+      keywords: [c.data.company, c.data.email, c.data.phone].filter(Boolean).join(" "),
+      detail: [c.data.company, c.data.past ? "past client" : ""].filter(Boolean).join(" · ") || "Client",
+      open: { edit: "client", rec: c },
+    });
+  for (const l of lists.work_log)
+    out.push({
+      id: l.id,
+      kind: "work_log",
+      group: "work_log",
+      title: l.data.note || (l.data.type === "payment" ? "Payment" : "Time"),
+      keywords: `${l.data.type} ${l.data.project_id ? projects.get(l.data.project_id) || "" : ""}`,
+      detail: [shortDate(l.data.date, today), l.data.type === "payment" ? money(l.data.amount || 0, ctx.currency) : minutesInWords(l.data.minutes || 0), l.data.project_id ? projects.get(l.data.project_id) : ""].filter(Boolean).join(" · "),
+      open: { edit: "work_log", rec: l },
+    });
+  for (const s of lists.server)
+    out.push({
+      id: s.id,
+      kind: "server",
+      group: "server",
+      title: s.data.name,
+      body: s.data.notes,
+      keywords: [s.data.provider, s.data.host, s.data.os].filter(Boolean).join(" "),
+      detail: [s.data.provider, s.data.host].filter(Boolean).join(" · ") || "Server",
+      open: { edit: "server", rec: s },
+    });
+  for (const d of lists.domain)
+    out.push({
+      id: d.id,
+      kind: "domain",
+      group: "domain",
+      title: d.data.name,
+      body: d.data.notes,
+      keywords: d.data.registrar,
+      detail: d.data.auto_renew ? "Renews itself" : d.data.expires_on ? `Expires ${shortDate(d.data.expires_on, today)}` : "Domain",
+      open: { edit: "domain", rec: d },
+    });
+  for (const i of lists.interest)
+    out.push({ id: i.id, kind: "interest", group: "interest", title: i.data.name, body: i.data.notes, detail: i.data.goal_min ? `${minutesInWords(i.data.goal_min)} a week` : "Interest", open: { edit: "interest", rec: i } });
+  for (const p of lists.practice)
+    out.push({
+      id: p.id,
+      kind: "practice",
+      group: "practice",
+      title: p.data.note || (p.data.interest_id ? interests.get(p.data.interest_id) || "Practice" : "Practice"),
+      keywords: p.data.interest_id ? interests.get(p.data.interest_id) : "",
+      detail: `${shortDate(p.data.date, today)} · ${minutesInWords(p.data.minutes)}`,
+      open: { edit: "practice", rec: p },
+    });
+  for (const w of lists.word)
+    out.push({
+      id: w.id,
+      kind: "word",
+      group: "word",
+      title: w.data.term,
+      body: [w.data.meaning, w.data.example].filter(Boolean).join(" "),
+      keywords: [w.data.say, w.data.interest_id ? interests.get(w.data.interest_id) : ""].filter(Boolean).join(" "),
+      detail: w.data.meaning,
+      open: { edit: "word", rec: w },
+    });
+  for (const m of lists.media)
+    out.push({
+      id: m.id,
+      kind: "media",
+      group: "media",
+      title: m.data.name,
+      body: [m.data.notes, m.data.progress].filter(Boolean).join(" "),
+      keywords: [m.data.type, m.data.platform, m.data.status].filter(Boolean).join(" "),
+      detail: [m.data.type, m.data.platform, m.data.progress].filter(Boolean).join(" · "),
+      open: { edit: "media", rec: m },
+    });
+  for (const w of lists.wish)
+    out.push({
+      id: w.id,
+      kind: "wish",
+      group: "wish",
+      title: w.data.name,
+      body: w.data.notes,
+      detail: [w.data.price ? money(w.data.price, ctx.currency) : "", w.data.got ? "got it" : ""].filter(Boolean).join(" · ") || "Wishlist",
+      open: { edit: "wish", rec: w },
     });
   return out;
 }

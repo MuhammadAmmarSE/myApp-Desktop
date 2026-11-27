@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
-import { Check, ChevronDown, type LucideIcon } from "lucide-react";
+import { Check, ChevronDown, Star as StarIcon, type LucideIcon } from "lucide-react";
 import { Popover } from "./Overlay";
 import { useFieldId } from "./Field";
 import { ease } from "@/theme/motion";
@@ -286,3 +286,43 @@ export const Kbd = ({ children, className }: { children: ReactNode; className?: 
 );
 
 export const Divider = ({ className }: { className?: string }) => <div className={clsx("h-px w-full bg-line", className)} />;
+
+// 1 to 5 stars: click one (clicking the one already chosen clears it), or use the arrow keys.
+export function Stars({ value, onChange, label = "Rating", size = 20 }: { value: number | null | undefined; onChange: (v: number | null) => void; label?: string; size?: number }) {
+  const v = value || 0;
+  const [hover, setHover] = useState(0);
+  const shown = hover || v;
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={5}
+      aria-valuenow={v}
+      aria-valuetext={v ? `${v} of 5` : "None"}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowUp") (e.preventDefault(), onChange(Math.min(5, v + 1)));
+        else if (e.key === "ArrowLeft" || e.key === "ArrowDown") (e.preventDefault(), onChange(v > 1 ? v - 1 : null));
+        else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") (e.preventDefault(), onChange(null));
+        else if (/^[1-5]$/.test(e.key)) (e.preventDefault(), onChange(Number(e.key)));
+      }}
+      onMouseLeave={() => setHover(0)}
+      className="inline-flex w-fit gap-1 rounded-[8px] outline-none focus-visible:shadow-[0_0_0_2px_var(--c-accent)]"
+    >
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          tabIndex={-1}
+          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          onMouseEnter={() => setHover(n)}
+          onClick={() => onChange(n === v ? null : n)}
+          className="grid place-items-center rounded-[6px] p-0.5 transition-transform active:scale-90"
+        >
+          <StarIcon size={size} strokeWidth={1.8} style={{ color: n <= shown ? "var(--c-warn)" : "var(--c-text3)", fill: n <= shown ? "var(--c-warn)" : "transparent" }} />
+        </button>
+      ))}
+    </div>
+  );
+}

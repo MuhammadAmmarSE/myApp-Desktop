@@ -1,8 +1,8 @@
 // The pages, in the sidebar's order, with their icons and shortcuts.
-import { Bot, CalendarDays, Car, CheckSquare, Bookmark, LayoutDashboard, NotebookPen, Package, ShoppingCart, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Bot, Briefcase, CalendarDays, Car, CheckSquare, Bookmark, LayoutDashboard, NotebookPen, Package, ShoppingCart, Sparkles, Users, Wallet, type LucideIcon } from "lucide-react";
 
 export type NavItem = { to: string; label: string; icon: LucideIcon; n?: string; badge?: BadgeKey };
-export type BadgeKey = "today" | "overdue" | "buy" | "dates" | "car" | "things" | "approvals";
+export type BadgeKey = "today" | "overdue" | "buy" | "dates" | "car" | "things" | "work" | "interests" | "approvals";
 
 export const NAV: { title: string; items: NavItem[] }[] = [
   {
@@ -28,6 +28,8 @@ export const NAV: { title: string; items: NavItem[] }[] = [
       { to: "/people", label: "People & dates", icon: Users, n: "7", badge: "dates" },
       { to: "/car", label: "My car", icon: Car, badge: "car" },
       { to: "/things", label: "My things", icon: Package, badge: "things" },
+      { to: "/work", label: "Work", icon: Briefcase, badge: "work" },
+      { to: "/interests", label: "Interests", icon: Sparkles, badge: "interests" },
     ],
   },
   { title: "Help", items: [{ to: "/assistant", label: "Assistant", icon: Bot, n: "8", badge: "approvals" }] },

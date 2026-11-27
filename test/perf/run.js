@@ -26,7 +26,7 @@ const BACKEND = path.resolve(process.env.REDLINE_BACKEND_DIR || path.join(ROOT, 
 const PORT = Number(process.env.PERF_PORT || 4330);
 const API = `http://127.0.0.1:${PORT}/api`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const PAGES = ["/", "/capture", "/calendar", "/todos", "/lists", "/notes", "/saved", "/money", "/people", "/car", "/things", "/assistant", "/settings"];
+const PAGES = ["/", "/capture", "/calendar", "/todos", "/lists", "/notes", "/saved", "/money", "/people", "/car", "/things", "/work", "/interests", "/assistant", "/settings"];
 const ONLY = process.env.PERF_ONLY ? process.env.PERF_ONLY.split(",") : null;
 const want = (part) => !ONLY || ONLY.includes(part);
 

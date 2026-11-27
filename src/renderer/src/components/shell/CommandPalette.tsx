@@ -5,7 +5,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowRight, Bookmark, Bot, Cake, CalendarDays, Car, CheckSquare, Clock, CornerDownLeft, FileText, Package, Search, Settings2, ShoppingCart, Sparkles, UserRound, Wallet, Wrench, Zap, type LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  Bookmark,
+  Bot,
+  Cake,
+  CalendarDays,
+  Car,
+  CheckSquare,
+  Clock,
+  CornerDownLeft,
+  FileText,
+  Package,
+  Search,
+  Settings2,
+  ShoppingCart,
+  Sparkles,
+  UserRound,
+  Wallet,
+  Wrench,
+  Zap,
+  Briefcase,
+  Users,
+  Timer,
+  Server,
+  Globe,
+  Flame,
+  Languages,
+  Gamepad2,
+  Gift,
+  type LucideIcon,
+} from "lucide-react";
 import { search, type Kind } from "@myapp/core";
 import { commands, GROUP_ORDER, GROUP_WORD, recordEntries, type Entry, type Open } from "@/lib/searchIndex";
 import { bridge, modKey } from "@/lib/bridge";
@@ -34,6 +64,16 @@ const ICON: Record<string, LucideIcon> = {
   thing: Package,
   car: Car,
   car_log: Wrench,
+  project: Briefcase,
+  client: Users,
+  work_log: Timer,
+  server: Server,
+  domain: Globe,
+  interest: Sparkles,
+  practice: Flame,
+  word: Languages,
+  media: Gamepad2,
+  wish: Gift,
 };
 
 export function runOpen(open: Open, opts: { shift?: boolean } = {}) {

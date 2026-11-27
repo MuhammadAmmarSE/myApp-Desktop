@@ -99,6 +99,27 @@ function seedRecords(now = Date.now()) {
   add("thing", { name: "Fridge", category: "Appliance", brand: "Cool 400", bought_on: at(-700), price: 120000, shop: "Home Store", warranty_until: at(400) }, 700);
   add("thing", { name: "Headphones", category: "Electronics", brand: "Quiet 3", bought_on: at(-380), price: 30000, warranty_until: at(-15) }, 380);
   add("thing", { name: "Old phone", category: "Phone", brand: "Pocket 8", bought_on: at(-900), price: 60000, gone: true }, 900);
+
+  // work: a client, two projects with time and a payment, a server and two domains (one expiring)
+  const acme = add("client", { name: "Sample Traders", company: "Sample Traders Ltd", email: "hello@example.com", rate: 3000 }, 60);
+  const site = add("project", { name: "Traders website", client_id: acme, status: "active", rate: 3000, rate_unit: "hour", start: at(-50), due: at(20), repo: "github.com/example/traders", url: "example.com" }, 50);
+  add("project", { name: "Recipe app", status: "idea" }, 20);
+  for (let i = 0; i < 8; i++) add("work_log", { project_id: site, type: "time", date: at(-i * 5), minutes: 90 + (i % 3) * 30, billable: i !== 3, note: i === 0 ? "Checkout page" : undefined }, i * 5);
+  add("work_log", { project_id: site, type: "payment", date: at(-20), amount: 15000, note: "Half up front" }, 20);
+  const vps = add("server", { name: "Main VPS", provider: "Sample Host", host: "203.0.113.10", user: "deploy", os: "Ubuntu 24.04", cost: 2500, renews_on: at(40), remind: [7] }, 90);
+  add("domain", { name: "example.com", registrar: "Sample Registrar", expires_on: at(200), project_id: site, server_id: vps, cost: 3500, remind: [30, 7, 1] }, 300);
+  add("domain", { name: "example.net", registrar: "Sample Registrar", expires_on: at(6), cost: 3000, remind: [30, 7, 1] }, 360);
+
+  // interests: two with practice over the last weeks, a few words, a game, a book and a wish
+  const arabic = add("interest", { name: "Arabic", goal_min: 120 }, 80);
+  const guitar = add("interest", { name: "Guitar", goal_min: 90 }, 70);
+  for (let i = 0; i < 30; i++) if (i % 3 !== 1) add("practice", { interest_id: i % 2 ? guitar : arabic, date: at(-i), minutes: 15 + (i % 4) * 10 }, i);
+  add("word", { interest_id: arabic, term: "kitab", meaning: "book", box: 2, due: at(0) }, 10);
+  add("word", { interest_id: arabic, term: "qalam", meaning: "pen", box: 4, due: at(9) }, 20);
+  add("word", { interest_id: arabic, term: "bait", meaning: "house", box: 0, due: at(-1) }, 3);
+  add("media", { name: "Sample Quest", type: "game", status: "doing", platform: "Console", progress: "Chapter 4", started_on: at(-12) }, 12);
+  add("media", { name: "A Long Read", type: "book", status: "done", rating: 4, finished_on: at(-30) }, 60);
+  add("wish", { name: "Mechanical keyboard", price: 18000, priority: "high", link: "example.com/keyboard" }, 15);
   return out;
 }
 

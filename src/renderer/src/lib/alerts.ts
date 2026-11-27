@@ -1,7 +1,7 @@
 // What should ring, worked out from the records: the same list the phone schedules (reminders,
 // events before they start, timed to-dos, birthdays and anniversaries, the car's papers and service,
 // warranties ending). The main process shows them at the right time, even with the window closed.
-import { addDays, currentPapers, isoDate, nextOccurrence, PAPER_REMIND, parseDate, toEpoch, WARRANTY_REMIND, yearsAt } from "@myapp/core";
+import { addDays, currentPapers, isoDate, nextOccurrence, PAPER_REMIND, parseDate, RENEW_REMIND, toEpoch, WARRANTY_REMIND, yearsAt } from "@myapp/core";
 import type { Alert } from "@shared/ipc";
 import { useRecords } from "@/store/records";
 import { bridge } from "@/lib/bridge";
@@ -75,7 +75,25 @@ export function upcomingAlerts(now = Date.now()): Alert[] {
       if (within(at)) out.push({ at, title: `Warranty on ${t.data.name} ends ${label(before)}`, body: "Claim anything that's wrong with it before then", url: "/things" });
     }
   }
-  return out.sort((a, b) => a.at - b.at).slice(0, MAX).map((a) => ({ ...a, key: `${a.at}|${a.title}` }));
+  // Work: a domain expiring (unless it renews by itself) and a server's bill
+  for (const d of lists.domain) {
+    if (d.data.gone || d.data.auto_renew || !d.data.expires_on) continue;
+    for (const before of d.data.remind || RENEW_REMIND) {
+      const at = at9(addDays(d.data.expires_on, -before));
+      if (within(at)) out.push({ at, title: `${d.data.name} ${before === 0 ? "expires today" : `expires ${label(before)}`}`, body: d.data.registrar ? `Renew it at ${d.data.registrar}` : "Renew it before it lapses", url: "/work?tab=domains" });
+    }
+  }
+  for (const s of lists.server) {
+    if (s.data.gone || !s.data.renews_on) continue;
+    for (const before of s.data.remind || [7]) {
+      const at = at9(addDays(s.data.renews_on, -before));
+      if (within(at)) out.push({ at, title: `${s.data.name}'s bill is due ${label(before)}`, body: s.data.provider ? `At ${s.data.provider}` : "The server's next bill", url: "/work?tab=servers" });
+    }
+  }
+  return out
+    .sort((a, b) => a.at - b.at)
+    .slice(0, MAX)
+    .map((a) => ({ ...a, key: `${a.at}|${a.title}` }));
 }
 
 

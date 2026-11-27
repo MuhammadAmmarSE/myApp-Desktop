@@ -40,6 +40,9 @@ const Money = lazy(() => import("@/pages/Money"));
 const People = lazy(() => import("@/pages/People"));
 const CarPage = lazy(() => import("@/pages/Car"));
 const Things = lazy(() => import("@/pages/Things"));
+const Work = lazy(() => import("@/pages/Work"));
+const WorkProject = lazy(() => import("@/pages/WorkProject"));
+const Interests = lazy(() => import("@/pages/Interests"));
 const Assistant = lazy(() => import("@/pages/Assistant"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Quick = lazy(() => import("@/pages/Quick"));
@@ -57,6 +60,9 @@ const ROUTES: [string, ComponentType<{ params: Record<string, string> }>][] = [
   ["/people", People],
   ["/car", CarPage],
   ["/things", Things],
+  ["/work", Work],
+  ["/work/:id", WorkProject],
+  ["/interests", Interests],
   ["/assistant", Assistant],
   ["/assistant/:id", Assistant],
   ["/settings", Settings],

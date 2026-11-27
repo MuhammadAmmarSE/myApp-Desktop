@@ -1,7 +1,7 @@
 // The editor drawer: one place where any record is added or changed, from any page (and from
 // Search, the tray and the menu). It slides in from the right and leaves the page in view.
 import { useState } from "react";
-import { Bell, Bookmark, Cake, CalendarDays, Car, CheckSquare, Package, ShoppingCart, UserRound, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, Languages, Package, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import {
   addDays,
   CAR_PAPERS,
@@ -34,7 +34,9 @@ import { useUI, type EditKind } from "@/store/ui";
 import { removeCar, removeCarLog, saveCarLog } from "@/lib/car";
 import { removeThing, saveThing, warrantyEnd } from "@/lib/things";
 import { hhmm, money as fmtMoney, MONTHS_LONG } from "@/lib/format";
-import { ChipRow, FormFooter, RemindChips, Row2, TagsInput } from "./kit";
+import { ChipRow, Form, FormFooter, RemindChips, Row2, TagsInput } from "./kit";
+import { ClientForm, DomainForm, ProjectForm, ServerForm, WorkLogForm } from "./WorkEditors";
+import { InterestForm, MediaForm, PracticeForm, WishForm, WordForm } from "./InterestEditors";
 
 type FormProps<K extends EditKind> = { rec: Rec<any> | null; preset?: Record<string, any>; close: () => void; kind?: K };
 
@@ -50,6 +52,16 @@ const META: Record<EditKind, { icon: LucideIcon; add: string; edit: string; tone
   thing: { icon: Package, add: "Add something you own", edit: "Edit" },
   car: { icon: Car, add: "Add your car", edit: "Edit car" },
   car_log: { icon: Wrench, add: "Add to the car's log", edit: "Edit log entry" },
+  project: { icon: Briefcase, add: "New project", edit: "Edit project" },
+  client: { icon: Users, add: "New client", edit: "Edit client" },
+  work_log: { icon: Clock, add: "Log time", edit: "Edit time" },
+  server: { icon: Server, add: "Add a server", edit: "Edit server" },
+  domain: { icon: Globe, add: "Add a domain", edit: "Edit domain" },
+  interest: { icon: Sparkles, add: "New interest", edit: "Edit interest" },
+  practice: { icon: Timer, add: "Log practice", edit: "Edit practice" },
+  word: { icon: Languages, add: "Add a word", edit: "Edit word" },
+  media: { icon: Gamepad2, add: "Add a game, book or show", edit: "Edit" },
+  wish: { icon: Gift, add: "Add to your wishlist", edit: "Edit wish" },
 };
 
 const undoToast = (text: string, rec: Rec) => toast.undo(text, () => useRecords.getState().restore(rec));
@@ -1046,16 +1058,6 @@ function CarLogForm({ rec, preset, close }: FormProps<"car_log">) {
 }
 
 // ---------------- host ----------------
-// a form's fields, with its buttons kept in view at the bottom of the drawer
-function Form({ children, footer }: { children: React.ReactNode; footer: React.ReactNode }) {
-  return (
-    <div className="flex min-h-full flex-col">
-      <div className="flex flex-1 flex-col gap-4">{children}</div>
-      <div className="sticky bottom-[-20px] -mx-5 -mb-5 mt-6 flex items-center gap-2 border-t border-line bg-surface px-5 py-3">{footer}</div>
-    </div>
-  );
-}
-
 const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   todo: TodoForm,
   item: ItemForm,
@@ -1068,6 +1070,16 @@ const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   thing: ThingForm,
   car: CarForm,
   car_log: CarLogForm,
+  project: ProjectForm,
+  client: ClientForm,
+  work_log: WorkLogForm,
+  server: ServerForm,
+  domain: DomainForm,
+  interest: InterestForm,
+  practice: PracticeForm,
+  word: WordForm,
+  media: MediaForm,
+  wish: WishForm,
 };
 
 export function EditorHost() {
@@ -1079,7 +1091,8 @@ export function EditorHost() {
   const e = editing || last;
   const meta = e ? META[e.kind] : null;
   const FormC = e ? FORMS[e.kind] : null;
-  const title = e ? (e.rec ? META[e.kind].edit : e.kind === "money" && e.preset?.type === "income" ? "Money in" : META[e.kind].add) : "";
+  const payment = e?.kind === "work_log" && (e.rec ? (e.rec.data as { type?: string }).type : e.preset?.type) === "payment";
+  const title = e ? (payment ? (e.rec ? "Edit payment" : "Got paid") : e.rec ? META[e.kind].edit : e.kind === "money" && e.preset?.type === "income" ? "Money in" : META[e.kind].add) : "";
   return (
     <Drawer open={!!editing} onClose={close} title={title} icon={meta?.icon} iconTone={meta?.tone}>
       {e && FormC && <FormC key={e.n} rec={e.rec || null} preset={e.preset} close={close} />}

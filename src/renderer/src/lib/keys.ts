@@ -37,6 +37,9 @@ export const SHORTCUTS = (): Shortcut[] => [
   { keys: "Delete", what: "Delete the chosen one (with Undo)", group: "On a page" },
   { keys: "T / M / W", what: "Calendar: today, month, week", group: "On a page" },
   { keys: "← / →", what: "Calendar and Money: previous / next", group: "On a page" },
+  { keys: "T / S", what: "Work: log time, start or stop the chosen project's timer", group: "On a page" },
+  { keys: "R", what: "Words: go over the ones that are due", group: "On a page" },
+  { keys: "Space · → · ←", what: "Going over words: show, knew it, didn't", group: "On a page" },
   { keys: `${M()} Enter`, what: "Save the open form · send to the assistant", group: "In a form" },
   { keys: `${M()} B / I / K`, what: "Notes: bold, italic, link", group: "In a form" },
 ];

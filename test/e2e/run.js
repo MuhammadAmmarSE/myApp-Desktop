@@ -336,6 +336,72 @@ async function scenario(name, fn, always = false) {
     await win.getByTestId("thing-grid").getByText("Camera").waitFor();
   });
 
+  await scenario("work: a project, its timer, and a payment that goes into Money as income", async () => {
+    await go("/work");
+    await win.getByTestId("renewals").getByText("example.net").waitFor();
+    await win.getByRole("button", { name: /^Add/ }).click();
+    await win.getByRole("menuitem", { name: "New project" }).click();
+    await dialog().getByPlaceholder("Project name, e.g. Shop website").fill("Shop app");
+    await field("Hourly rate (PKR)").fill("2500");
+    await saveDialog();
+    const p = await until("the project", async () => (await live("project")).find((r) => r.data.name === "Shop app" && r.data.rate === 2500 && r.data.rate_unit === "hour"));
+    await win.locator(`[data-project="${p.id}"]`).click();
+    await win.getByTestId("work-project").getByRole("heading", { name: "Shop app" }).waitFor();
+    await win.getByTestId("timer").getByRole("button", { name: /Start/ }).click();
+    await until("the timer running", async () => (await live("project")).find((r) => r.id === p.id && typeof r.data.timer_from === "number"));
+    await win.getByTestId("timer").getByRole("button", { name: /Stop/ }).click();
+    await dialog().getByRole("button", { name: /Log time/ }).waitFor();
+    await saveDialog();
+    await until("the time logged", async () => (await live("work_log")).find((r) => r.data.project_id === p.id && r.data.type === "time" && r.data.minutes >= 1));
+    if ((await live("project")).find((r) => r.id === p.id).data.timer_from) throw new Error("the timer is still running");
+    await win.getByRole("button", { name: /Got paid/ }).click();
+    await field("Got paid (PKR)").fill("5000");
+    await saveDialog();
+    const pay = await until("the payment", async () => (await live("work_log")).find((r) => r.data.project_id === p.id && r.data.type === "payment" && r.data.amount === 5000));
+    await until("its income in Money", async () => (await live("money")).find((r) => r.id === pay.data.money_id && r.data.type === "income" && r.data.category === "Freelance"));
+    await win.getByTestId("project-log").getByText("+").first().waitFor();
+  });
+
+  await scenario("work: a domain about to expire is renewed for a year in one click, and Undo puts it back", async () => {
+    await go("/work");
+    const d = (await live("domain")).find((r) => r.data.name === "example.net");
+    await win.locator(`[data-renewal="${d.id}"]`).getByRole("button", { name: /Renewed/ }).click();
+    const year = Number(d.data.expires_on.slice(0, 4)) + 1;
+    await until("a year on", async () => (await live("domain")).find((r) => r.id === d.id && r.data.expires_on === `${year}${d.data.expires_on.slice(4)}`));
+    await win.getByRole("button", { name: "Undo" }).click();
+    await until("back as it was", async () => (await live("domain")).find((r) => r.id === d.id && r.data.expires_on === d.data.expires_on));
+    await go("/work?tab=domains");
+    await win.getByTestId("domain-table").getByText("example.com").waitFor();
+  });
+
+  await scenario("interests: practice in a click, a word typed as word = meaning, and going over words with the keys", async () => {
+    await go("/interests");
+    const arabic = (await live("interest")).find((r) => r.data.name === "Arabic");
+    const before = (await live("practice")).length;
+    await win.locator(`[data-interest="${arabic.id}"]`).getByRole("button", { name: "+15 min" }).click();
+    await until("the practice", async () => (await live("practice")).length === before + 1 && (await live("practice")).find((r) => r.data.interest_id === arabic.id && r.data.minutes === 15 && r.data.date === day(0)));
+    await go("/interests?tab=words");
+    await win.getByTestId("quick-word").fill("shams = sun");
+    await win.keyboard.press("Enter");
+    await until("the word", async () => (await live("word")).find((r) => r.data.term === "shams" && r.data.meaning === "sun"));
+    await win.getByRole("button", { name: /Go over them/ }).click();
+    const seen = new Set();
+    for (let i = 0; i < 8; i++) {
+      if (await win.getByTestId("review-done").isVisible().catch(() => false)) break;
+      // the card going away fades out over the next one: read the one that's coming in
+      const term = await win.getByTestId("review-term").last().innerText();
+      await win.keyboard.press("Space");
+      await win.getByRole("button", { name: new RegExp(`^${term}: `) }).waitFor();
+      seen.add(term);
+      await win.keyboard.press("ArrowRight");
+      await win.getByRole("button", { name: new RegExp(`^${term}: `) }).waitFor({ state: "detached" });
+    }
+    await win.getByTestId("review-done").waitFor();
+    if (!seen.has("shams") || !seen.has("kitab")) throw new Error(`went over ${[...seen].join(", ")}`);
+    await until("the words moved on", async () => (await live("word")).find((r) => r.data.term === "shams" && r.data.box === 1 && r.data.due === day(1)));
+    await win.keyboard.press("Escape");
+  });
+
   await scenario("saved: paste from the clipboard, then one click copies it back", async () => {
     await go("/saved");
     await app.evaluate(({ clipboard }) => clipboard.writeText("IBAN-TEST-0001"));

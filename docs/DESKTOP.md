@@ -27,7 +27,7 @@ main process (Node)                       screens (Chromium, sandboxed)
   to the front, and every minute. A newer copy from the server wins; an unsent newer edit here
   stays. Records are one shape (`core/src/kinds.ts`).
 - **Reminders** are worked out by the screens from the records (reminders, events with a
-  reminder, dated to-dos, birthdays, car papers, warranties) and handed to the main process,
+  reminder, dated to-dos, birthdays, car papers, warranties, domains expiring, servers' bills) and handed to the main process,
   which rings them even with the window closed (the tray keeps the app running), holds them in
   quiet hours and shows missed ones when the computer wakes.
 - **Quick capture** is a second, frameless window, created at start and shown by the global
@@ -81,8 +81,20 @@ it and fails when a rule is broken.
 
 Ctrl/⌘ K search, ? shortcuts, Ctrl/⌘ 1–9 pages, N new on any page, J/K or arrows to move through a
 list, Enter to open, Space or X to tick, Delete to remove (with Undo), Ctrl/Shift-click to select
-several. Calendar: T today, M/W/D/A views, ←/→. Money: ←/→ months, T this month. Editors save
-with Ctrl/⌘ Enter.
+several. Calendar: T today, M/W/D/A views, ←/→. Money: ←/→ months, T this month. Work: T logs
+time, S starts or stops the chosen project's timer (on a project's page: T, P got paid, E edit, S
+timer, Esc back). Interests: R goes over the words that are due (Space shows the meaning, → knew
+it, ← didn't). Editors save with Ctrl/⌘ Enter.
+
+## Editors
+
+Every record is added and changed in the drawer (`components/forms/Editors.tsx`). The plain ones
+(Work and Interests) are a list of fields for `FieldsForm` (text, number, chips, a pick from a
+list, a day, a duration typed as "1h 30" or picked, stars, a yes/no, reminder days), the same list
+the phone's `FormSheet` takes; a field can sit two to a row and show only when another says so.
+Saving and removing that touches other records goes through `lib/` with Undo: a payment saved as
+income in Money (`lib/work.ts`), a wish got into Money and My things (`lib/interests.ts`), a
+project removed with its log.
 
 ## Files on this computer
 
