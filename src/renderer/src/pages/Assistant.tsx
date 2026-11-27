@@ -390,10 +390,12 @@ function Conversation({ runId }: { runId: number }) {
     let alive = true;
     (async () => {
       let after = 0;
+      let known = ""; // the status it last saw: the server answers at once when it has moved on
       while (alive) {
         try {
-          const r = await api<{ run: Run; events: OpEvent[]; last: number }>("GET", `/operator/runs/${runId}/events?after=${after}&wait=20&include_children=1`, undefined, { timeoutMs: 30000 });
+          const r = await api<{ run: Run; events: OpEvent[]; last: number }>("GET", `/operator/runs/${runId}/events?after=${after}&wait=20&include_children=1&known=${known}`, undefined, { timeoutMs: 30000 });
           if (!alive) break;
+          known = r.run.status;
           setRun(r.run);
           setError("");
           if (r.events.length) {
