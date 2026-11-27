@@ -1,7 +1,8 @@
 // A Redline server for the desktop tests: the real myapp-backend (from REDLINE_BACKEND_DIR, by
 // default ../myapp-backend) on a test database, with stand-ins for DeepSeek and ElevenLabs, so
 // nothing leaves this machine. It answers Capture with a fixed set of things to save, and the assistant with a
-// short script: a harmless command, then one that needs your yes, then an answer.
+// short script: a harmless command, then one that needs your yes, then an answer. Anything heard
+// through the (fake) microphone is written down as "Read me something short".
 //   TEST_DB_USER=... TEST_DB_PASSWORD=... node test/e2e/server.js [port] [--seed] [--keep]
 // The test database (its name must contain "test") is emptied every time it starts, unless
 // --keep is given (a restart in the middle of a test: same database, same account).
@@ -51,6 +52,8 @@ function operatorTurn(body) {
   const file = /\[File “([^”]+)”[^\n]*\n"""\n([^\n]*)/.exec(text);
   if (file) return { content: `I read ${file[1]}. It says: ${file[2]}` };
   if (/photo/i.test(text) || Array.isArray(first)) return { content: "I can see the photo you sent." };
+  // what the fake microphone "said" (the ElevenLabs stand-in writes it down as this)
+  if (/read me something short/i.test(text)) return { content: "Here is something short: the kettle is on." };
   // your records: looks up "my brother", then proposes his shoe size and a to-do to save
   if (/brother/i.test(text)) {
     if (steps === 0) return { tool_calls: [call("find_records", { query: "sibling", kinds: ["person"] })] };
@@ -133,6 +136,13 @@ const eleven = http.createServer((req, res) => {
         has_more: false,
       });
     if (req.url.startsWith("/v1/user/subscription")) return json({ tier: "starter", character_count: 1200, character_limit: 30000 });
+    // listening: whatever was recorded is "Read me something short"; what came, and as what, is logged
+    if (req.url.startsWith("/v1/speech-to-text")) {
+      const body = Buffer.concat(chunks);
+      const type = (/Content-Type: (audio\/[\w.+-]+)/.exec(body.toString("latin1")) || [])[1] || "?";
+      fs.appendFileSync(path.join(work, "voice.log"), `listen ${type} ${body.length}\n`);
+      return json({ text: "Read me something short", language_code: "eng", audio_duration_secs: 2.4 });
+    }
     const m = /^\/v1\/text-to-speech\/([^/?]+)/.exec(req.url);
     if (m) {
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");

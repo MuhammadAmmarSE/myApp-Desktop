@@ -16,13 +16,14 @@ export interface Voice {
   preview_url: string;
 }
 
-// whether your server has the natural voice (checked now and then, not before every answer)
-type VoiceServer = { state: "unknown" | "on" | "off" | "old"; message: string; defaultVoice: string | null; checkedAt: number; usage: { used: number; limit: number } | null };
-export const useVoiceServer = create<VoiceServer>(() => ({ state: "unknown", message: "", defaultVoice: null, checkedAt: 0, usage: null }));
+// whether your server has the natural voice (checked now and then, not before every answer).
+// listen: it can write down what you say (talking to the assistant needs it on this computer)
+type VoiceServer = { state: "unknown" | "on" | "off" | "old"; listen: boolean; message: string; defaultVoice: string | null; checkedAt: number; usage: { used: number; limit: number } | null };
+export const useVoiceServer = create<VoiceServer>(() => ({ state: "unknown", listen: false, message: "", defaultVoice: null, checkedAt: 0, usage: null }));
 export async function loadVoiceStatus(withUsage = false) {
   try {
     const d = await api<{ listen: boolean; speak: boolean; voice_id?: string | null; message?: string; usage?: { used: number; limit: number } | null }>("GET", `/voice/status${withUsage ? "?usage=1" : ""}`, undefined, { timeoutMs: 8000 });
-    useVoiceServer.setState({ state: d.speak ? "on" : "off", message: d.message || "", defaultVoice: d.voice_id || null, checkedAt: Date.now(), ...(withUsage ? { usage: d.usage || null } : {}) });
+    useVoiceServer.setState({ state: d.speak ? "on" : "off", listen: !!d.listen, message: d.message || "", defaultVoice: d.voice_id || null, checkedAt: Date.now(), ...(withUsage ? { usage: d.usage || null } : {}) });
   } catch (e) {
     // an older server has no /voice; offline keeps what was known
     if (e instanceof ApiError && e.status === 404) useVoiceServer.setState({ state: "old", message: "Your server needs an update for the natural voice.", checkedAt: Date.now() });
@@ -38,8 +39,19 @@ async function natural() {
   return (await loadVoiceStatus()) === "on";
 }
 
-// whether something is being read aloud (for a Stop button)
-export const useSpeaking = create<{ speaking: boolean }>(() => ({ speaking: false }));
+// whether your server can write down what you say: checked in the last ten minutes, or asked now
+export async function listenReady(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const v = useVoiceServer.getState();
+  const state = v.state !== "unknown" && Date.now() - v.checkedAt < 10 * 60000 ? v.state : await loadVoiceStatus();
+  if (state === "on" && useVoiceServer.getState().listen) return { ok: true };
+  if (state === "old") return { ok: false, message: "Your server needs an update before you can talk to it. Update myapp-backend on it and restart it." };
+  if (state === "unknown") return { ok: false, message: "Can't reach your server right now. Talking goes through it." };
+  return { ok: false, message: "Talking goes through your server's natural voice: put an ElevenLabs key (ELEVENLABS_API_KEY) in its .env and restart it." };
+}
+
+// whether something is being read aloud (for a Stop button); finished: when the last answer was
+// read to its end (Stop doesn't count), so a conversation can listen for your reply
+export const useSpeaking = create<{ speaking: boolean; finished: number }>(() => ({ speaking: false, finished: 0 }));
 
 const plainWords = (text: string) =>
   String(text || "")
@@ -66,25 +78,25 @@ function play(src: string, my: number) {
   stopAudio();
   const a = new Audio(src);
   audio = a;
-  const over = () => {
+  const over = (ended: boolean) => () => {
     if (audio === a) audio = null;
-    if (my === turn) useSpeaking.setState({ speaking: false });
+    if (my === turn) useSpeaking.setState(ended ? { speaking: false, finished: Date.now() } : { speaking: false });
   };
-  a.onended = over;
-  a.onerror = over;
+  a.onended = over(true);
+  a.onerror = over(false);
   useSpeaking.setState({ speaking: true });
-  a.play().catch(over);
+  a.play().catch(over(false));
 }
 
 function computerVoice(plain: string, my: number) {
   const s = window.speechSynthesis;
   if (!s) return false;
   const u = new SpeechSynthesisUtterance(plain.slice(0, 4000));
-  const over = () => {
-    if (my === turn) useSpeaking.setState({ speaking: false });
+  const over = (ended: boolean) => () => {
+    if (my === turn) useSpeaking.setState(ended ? { speaking: false, finished: Date.now() } : { speaking: false });
   };
-  u.onend = over;
-  u.onerror = over;
+  u.onend = over(true);
+  u.onerror = over(false);
   useSpeaking.setState({ speaking: true });
   s.speak(u);
   return true;

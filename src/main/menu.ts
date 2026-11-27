@@ -3,13 +3,16 @@
 // shortcuts themselves (registerAccelerator: false), so a key never does two things.
 import { app, Menu, type MenuItemConstructorOptions } from "electron";
 import type { Command } from "@shared/ipc";
+import { getPrefs } from "./prefs";
 import { command, openQuick, setQuitting } from "./windows";
 
 const isMac = process.platform === "darwin";
 const cmd = (c: Command) => () => command(c);
-const item = (label: string, accelerator: string, click: () => void): MenuItemConstructorOptions => ({ label, accelerator, registerAccelerator: false, click });
+const item = (label: string, accelerator: string, click: () => void): MenuItemConstructorOptions => ({ label, ...(accelerator ? { accelerator } : {}), registerAccelerator: false, click });
 
+// built again when the global shortcuts change, so their labels stay true
 export function buildMenu() {
+  const p = getPrefs();
   const go = (label: string, to: string, n: string) => item(label, `CmdOrCtrl+${n}`, cmd({ type: "navigate", to }));
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -36,7 +39,8 @@ export function buildMenu() {
       label: "File",
       submenu: [
         item("Capture…", "CmdOrCtrl+Shift+C", cmd({ type: "new", what: "capture" })),
-        item("Quick capture", "CmdOrCtrl+Shift+Space", openQuick),
+        item("Quick capture", p.quickShortcut || "", openQuick),
+        item("Talk to the assistant", p.talkShortcut || "", cmd({ type: "talk" })),
         { type: "separator" },
         item("New to-do", "CmdOrCtrl+N", cmd({ type: "new", what: "todo" })),
         item("New note", "CmdOrCtrl+Shift+N", cmd({ type: "new", what: "note" })),

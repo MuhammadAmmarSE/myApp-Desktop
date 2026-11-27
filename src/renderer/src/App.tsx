@@ -3,6 +3,7 @@
 import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
 import { motion } from "motion/react";
 import { actionToRecords, isKind } from "@myapp/core";
+import { talk } from "@/lib/talk";
 import { addMove, useFunds } from "@/lib/funds";
 import type { Command } from "@shared/ipc";
 import { useApplyTheme } from "@/theme";
@@ -106,6 +107,7 @@ function handleCommand(cmd: Command) {
   else if (cmd.type === "palette") useUI.getState().openPalette();
   else if (cmd.type === "shortcuts") useUI.getState().setShortcuts(true);
   else if (cmd.type === "sync") void syncNow();
+  else if (cmd.type === "talk") talk();
   else if (cmd.type === "new") {
     if (cmd.what === "capture") navigate("/capture");
     else if (cmd.what === "note") navigate("/notes/new");

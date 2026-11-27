@@ -11,7 +11,8 @@ import { loadRecords, markClean, putRecords, setMeta, wipeRecords } from "./reco
 import { getPrefs, setPrefs } from "./prefs";
 import { schedule, show as showNotification, testNotification } from "./reminders";
 import { applyStartAtLogin } from "./startup";
-import { registerQuickShortcut } from "./shortcuts";
+import { registerQuickShortcut, registerTalkShortcut } from "./shortcuts";
+import { buildMenu } from "./menu";
 import { broadcast, command, hideQuick, mainWindow, openQuick, setQuitting, winState } from "./windows";
 import { buildTrayMenu } from "./tray";
 
@@ -51,6 +52,8 @@ export function applyPrefs(p: Prefs, changed: Partial<Prefs>): string | undefine
   let error: string | undefined;
   if ("startAtLogin" in changed || "startHidden" in changed) error = applyStartAtLogin(p.startAtLogin, p.startHidden);
   if ("quickShortcut" in changed) error = registerQuickShortcut(p.quickShortcut) || error;
+  if ("talkShortcut" in changed) error = registerTalkShortcut(p.talkShortcut) || error;
+  if ("quickShortcut" in changed || "talkShortcut" in changed) buildMenu();
   if ("zoom" in changed) for (const w of BrowserWindow.getAllWindows()) w.webContents.setZoomFactor(p.zoom);
   buildTrayMenu();
   broadcast(CH.evPrefs, p);
@@ -143,6 +146,21 @@ export function registerIpc() {
     return request("POST", "/auth/confirm", { password: password.slice(0, 200) }, { timeoutMs: 15000 });
   });
 
+  // the microphone: a Mac asks you the first time (with the words in electron-builder.yml); Windows
+  // has a switch for it in its privacy settings. The page itself only gets audio (index.ts).
+  ipcMain.handle(CH.micAccess, async () => {
+    if (process.platform !== "darwin" && process.platform !== "win32") return "granted";
+    try {
+      const s = systemPreferences.getMediaAccessStatus("microphone");
+      if (s === "granted") return "granted";
+      if (s === "not-determined" && process.platform === "darwin") return (await systemPreferences.askForMediaAccess("microphone")) ? "granted" : "denied";
+      if (s === "restricted") return "restricted";
+      return s === "denied" ? "denied" : "granted";
+    } catch {
+      return "granted"; // can't tell: let Chromium try
+    }
+  });
+
   ipcMain.handle(CH.dbLoad, () => loadRecords());
   ipcMain.handle(CH.dbPut, (_e, recs: StoredRec[]) => putRecords(recs));
   ipcMain.handle(CH.dbClean, (_e, list: { id: string; updated_at: number }[]) => markClean(list));
@@ -157,9 +175,12 @@ export function registerIpc() {
     for (const k of Object.keys(p) as (keyof Prefs)[]) if (p[k] !== before[k]) (changed as any)[k] = p[k];
     let error = applyPrefs(p, changed);
     // a shortcut that can't be used goes back to the one that worked
-    if (error && "quickShortcut" in changed) {
-      const back = setPrefs({ quickShortcut: before.quickShortcut });
-      registerQuickShortcut(back.quickShortcut);
+    if (error && ("quickShortcut" in changed || "talkShortcut" in changed)) {
+      const back = setPrefs("quickShortcut" in changed ? { quickShortcut: before.quickShortcut } : { talkShortcut: before.talkShortcut });
+      if ("quickShortcut" in changed) registerQuickShortcut(back.quickShortcut);
+      else registerTalkShortcut(back.talkShortcut);
+      buildMenu();
+      buildTrayMenu();
       broadcast(CH.evPrefs, back);
       return { prefs: back, error };
     }

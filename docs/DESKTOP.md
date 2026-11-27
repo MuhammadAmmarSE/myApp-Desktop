@@ -121,9 +121,37 @@ the server; Quick capture's window doesn't keep records, so it sends drafts with
 (`ref`) that the main window swaps for the real ones as it makes them, and "they gave more" as a
 `fund_more` draft (App.tsx `handleCommand`).
 
+## Talking (`lib/listen.ts`, `lib/voiceActivity.ts`, `lib/talk.ts`)
+
+The microphone button (the assistant's message box, Capture, the Quick capture window, and
+Settings → Assistant → Talking to it as a test) records with `getUserMedia` + `MediaRecorder`
+(webm/opus, 32 kbps). The main process allows the page sound only, never the camera or the screen,
+and only for Redline's own pages (`index.ts`, the permission handler); a Mac asks you first
+(`bridge.mic.access`, with the words in electron-builder.yml, and the audio-input entitlement in
+build/entitlements.mac.plist), Windows has its own privacy switch. An `AnalyserNode` gives the
+loudness ten times a second to `voiceActivity.ts`, which learns the room's noise and says when
+you've spoken and gone quiet for 1.5 s (or said nothing for 7 s, or talked for 90 s); the meter
+reads the same number. The recording goes to `/api/voice/transcribe` through the main process
+with the language and how Urdu is written (Settings), and ElevenLabs Scribe on your server writes
+it down. Without an ElevenLabs key on the server there is no listening: this computer has no
+recogniser of its own, and the button says so. One microphone at a time (`listen.ts` `owner`);
+the Quick window lets go of it when it hides.
+
+In the assistant, what you said goes out after 2.5 s unless you click Edit or type (Settings: or it
+waits). A chat started by voice opens with `?spoken=1`; answers to spoken requests are read aloud
+(Settings → Read answers aloud: when I talk / always / never, plus the speaker button in the chat),
+and once one has been read to its end (`useSpeaking.finished`) the box listens again, quietly, for
+your reply (Settings: or stop there). Esc stops listening without sending.
+
+The talk shortcut (Alt+Space by default, a global shortcut like Quick capture's, in `main/shortcuts.ts`;
+Settings → Assistant, the menu and the tray) sends a `talk` command: the assistant's message box on
+screen starts listening, or stops if it is (`talk.ts` keeps the newest box that answers it);
+with none on screen the assistant opens a new chat already listening (`/assistant?voice=1`). The
+two global shortcuts can't share keys.
+
 ## Reading aloud (`lib/speech.ts`)
 
-With "Read answers aloud" on, an answer is read in your ElevenLabs voice when your server has an
+When an answer is to be read (see Talking), it is read in your ElevenLabs voice when your server has an
 ElevenLabs key (`/api/voice/status`, checked every ten minutes) and Settings → Assistant → Natural
 voice is on: the words go to `/api/voice/speak` through the main process like every other call,
 and the mp3 that comes back plays from a data URL (`media-src data:`). The page fetches nothing
@@ -146,6 +174,8 @@ this computer's settings.
 
 ## Testing
 
-`npm test` (unit), `npm run e2e` (real Electron against the real server on a test database) and
+`npm test` (unit), `npm run e2e` (real Electron against the real server on a test database, with
+a fake microphone that "says" something: test/e2e/speech.js writes it, and the ElevenLabs stand-in
+writes it down as "Read me something short") and
 `npm run perf` (how hard the app works); see the README. The e2e scenarios check the server's database after each step, so a pass means
 the change was made, kept and synced.

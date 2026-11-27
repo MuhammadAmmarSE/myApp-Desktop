@@ -216,7 +216,7 @@ export const FEATURES: Feature[] = [
     name: "Assistant",
     status: "built",
     what: "This assistant: it knows everything kept in the app and how the app works, answers from your records, proposes changes you save with a tap, and does work on your server and accounts (GitHub, Firebase, DNS, Claude Code).",
-    where: "Phone: More → Assistant, or hold the capture orb and speak. Computer: Assistant (Ctrl/⌘ 8).",
+    where: "Phone: More → Assistant, or hold the capture orb and speak. Computer: Assistant (Ctrl/⌘ 8), or press Alt/⌥ Space in any app and speak.",
     how: [
       "Changes to your records come as a card: Save or Skip each, Save all, Undo right after.",
       "Risky server steps wait for your fingerprint (on the computer your password or Touch ID).",
@@ -268,7 +268,8 @@ export const FEATURES: Feature[] = [
     where: "Everywhere.",
     how: [
       "Phone: most rows swipe right for their main action and left to delete (Undo); hold a row for its menu; swipe the page for its tabs; pull down to sync.",
-      "Voice: the microphone in Capture and the Assistant.",
+      "Voice: the microphone in Capture and the Assistant, on the phone and the computer (also in the computer's Quick capture). It stops when you stop talking and sends after a moment (Edit holds it); answers to what you said are read aloud, then it listens for your reply.",
+      "Computer: Alt/⌥ Space from any app opens the Assistant listening, or stops it (the keys can be changed in Settings → Assistant).",
       "Phone icon shortcuts: Capture, New to-do, Search, Ask the assistant.",
       "Computer: Ctrl/⌘ / lists the keyboard shortcuts; Ctrl/⌘ 1-8 go to Today, Calendar, To-dos, Lists, Notes, Money, People, Assistant; N adds one on any page; redline:// links open the app.",
     ],

@@ -13,7 +13,7 @@ export type Open =
   | { edit: EditKind; rec?: Rec | null; preset?: Record<string, unknown> }
   | { copy: string; rec: Rec<"clip"> }
   | { set: Record<string, unknown>; say: string }
-  | { run: "sync" | "quick" | "shortcuts" | "export" | "capture" };
+  | { run: "sync" | "quick" | "shortcuts" | "export" | "capture" | "talk" };
 
 export const GROUP_WORD: Record<Group, string> = {
   do: "Go to and do",
@@ -97,6 +97,7 @@ export function commands(mod = "Ctrl"): Entry[] {
     page("settings", "Settings", "/settings", "preferences account theme background shortcuts", `${mod} ,`),
     act("capture", "Capture with AI", "tell ai add write quick", { run: "capture" }, "Action", `${mod} Shift C`),
     act("quick", "Quick capture window", "floating spotlight anywhere global", { run: "quick" }),
+    act("talk", "Talk to the assistant", "voice speak say microphone mic dictate", { run: "talk" }),
     act("todo", "New to-do", "add task create", { edit: "todo" }, "Action", `${mod} N`),
     act("item", "Add to a list", "buy shopping grocery create", { edit: "item" }),
     act("expense", "Add an expense", "spent money paid create", { edit: "money" }, "Action", `${mod} Shift E`),

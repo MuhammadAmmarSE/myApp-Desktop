@@ -12,7 +12,7 @@ import { flushPrefs, getPrefs } from "./prefs";
 import { nextAlert, startReminders, stopReminders, whenNextChanges } from "./reminders";
 import { buildMenu } from "./menu";
 import { createTray, destroyTray, setTrayNext } from "./tray";
-import { registerQuickShortcut, unregisterAll } from "./shortcuts";
+import { unregisterAll } from "./shortcuts";
 import { openedHidden } from "./startup";
 import { broadcast, command, createMainWindow, createQuickWindow, mainWindow, openQuick, setQuitting, showMain } from "./windows";
 
@@ -57,8 +57,18 @@ if (!single) {
 
   app.whenReady().then(() => {
     if (app.isPackaged) app.setAsDefaultProtocolClient("redline");
-    // the page makes no network requests of its own and needs no permissions
-    electronSession.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === "clipboard-sanitized-write" || permission === "notifications"));
+    // the page makes no network requests of its own; the only permissions it gets are the
+    // clipboard, notifications, and the microphone (sound only, never the camera or the screen)
+    // for talking to the assistant, and only for Redline's own pages
+    const dev = process.env.ELECTRON_RENDERER_URL;
+    const own = (url: string) => url.startsWith("file://") || (!!dev && url.startsWith(dev));
+    electronSession.defaultSession.setPermissionRequestHandler((wc, permission, done, details) => {
+      if (permission === "media") {
+        const types = (details as Electron.MediaAccessPermissionRequest).mediaTypes || [];
+        return done(types.length > 0 && types.every((t) => t === "audio") && own((details as Electron.MediaAccessPermissionRequest).requestingUrl || wc.getURL()));
+      }
+      done(permission === "clipboard-sanitized-write" || permission === "notifications");
+    });
 
     loadSession();
     whenSignedOut((message) => {
@@ -76,8 +86,7 @@ if (!single) {
     setTrayNext(nextAlert());
     startReminders();
     const p = getPrefs();
-    applyPrefs(p, { quickShortcut: p.quickShortcut });
-    registerQuickShortcut(p.quickShortcut);
+    applyPrefs(p, { quickShortcut: p.quickShortcut, talkShortcut: p.talkShortcut });
 
     const link = process.argv.find((a) => a.startsWith("redline://"));
     if (link) setTimeout(() => openLink(link), 800);

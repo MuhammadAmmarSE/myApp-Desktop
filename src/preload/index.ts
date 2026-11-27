@@ -53,6 +53,7 @@ const bridge: Bridge = {
     saveFile: (i) => ipcRenderer.invoke(CH.saveFile, i),
   },
   clipboard: { write: (t) => ipcRenderer.send(CH.clipboard, t), read: () => ipcRenderer.invoke(CH.clipboardRead) },
+  mic: { access: () => ipcRenderer.invoke(CH.micAccess) },
   quick: {
     open: () => ipcRenderer.send(CH.quickOpen),
     close: () => ipcRenderer.send(CH.quickClose),

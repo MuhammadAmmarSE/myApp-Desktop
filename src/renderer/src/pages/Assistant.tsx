@@ -21,7 +21,7 @@ import { api } from "@/lib/api";
 import { requestContext } from "@/lib/assistant";
 import { navigate, useQuery } from "@/lib/router";
 import { usePageKeys } from "@/lib/keys";
-import { hush, speak } from "@/lib/speech";
+import { hush, speak, useSpeaking } from "@/lib/speech";
 import type { Photo } from "@/lib/images";
 import type { Attachment } from "@/lib/attachments";
 import { ago } from "@/lib/format";
@@ -238,12 +238,15 @@ function Home() {
   const op = useOperator();
   const [sending, setSending] = useState(false);
   const ask = q.get("ask") || undefined;
-  const start = async (text: string, photos: Photo[], files: Attachment[]) => {
+  // opened by the talk shortcut: the box listens straight away
+  const listen = q.get("voice") === "1";
+  const start = async (text: string, photos: Photo[], files: Attachment[], byVoice = false) => {
     setSending(true);
     try {
       const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), files: filesOf(files), context: requestContext() }, { timeoutMs: timeoutFor(photos, files) });
       useOperator.getState().loadRuns();
-      navigate(`/assistant/${r.run.id}`);
+      // said, not typed: its answer is read aloud there, and then it listens for your reply
+      navigate(`/assistant/${r.run.id}${byVoice ? "?spoken=1" : ""}`);
       return true;
     } catch (e: any) {
       toast.error(e.message || "Couldn't start that.");
@@ -267,11 +270,11 @@ function Home() {
           It knows what you keep here. Changes wait for your click, risky steps for your fingerprint or password.
         </motion.p>
         <motion.div {...rise(3)}>
-          <Composer big placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus />
+          <Composer big placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus={!listen} autoListen={listen} />
         </motion.div>
         <motion.div {...rise(4)} className="mt-3 flex flex-wrap justify-center gap-1.5">
           {IDEAS.map((i) => (
-            <Chip key={i} onClick={() => void start(i, [], [])}>
+            <Chip key={i} onClick={() => void start(i, [], [], false)}>
               {i}
             </Chip>
           ))}
@@ -380,17 +383,25 @@ function Blocked() {
 
 // ---------------- one conversation ----------------
 function Conversation({ runId }: { runId: number }) {
+  const q = useQuery();
   const readAloud = useSettings((s) => s.readAloud);
+  const speakReplies = useSettings((s) => s.speakReplies);
+  const followUp = useSettings((s) => s.voiceFollowUp);
   const upToDate = useOperator((s) => s.upToDate !== false);
   const [run, setRun] = useState<Run | null>(null);
   const [events, setEvents] = useState<OpEvent[]>([]);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const [muted, setMuted] = useState(!readAloud);
+  // the last thing you sent here was said, not typed (from the home page: ?spoken=1)
+  const [voiced, setVoiced] = useState(q.get("spoken") === "1");
+  // read aloud: what Settings says (every answer, or answers to what you said) until the speaker
+  // button here says otherwise
+  const [aloud, setAloud] = useState<boolean | null>(null);
+  const reading = aloud ?? (readAloud || (voiced && speakReplies));
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
   const [atEnd, setAtEnd] = useState(true);
-  const since = useRef(-1); // read answers that come after you wrote, not old ones
+  const since = useRef(q.get("spoken") === "1" ? 0 : -1); // read answers that come after you wrote, not old ones
   const spoken = useRef(new Set<number>());
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -438,21 +449,41 @@ function Conversation({ runId }: { runId: number }) {
   };
 
   // read new answers aloud
+  const readHere = useRef(false); // an answer of this chat is being read (not one elsewhere)
   useEffect(() => {
-    if (muted || since.current < 0) return;
+    if (!reading || since.current < 0) return;
     for (const it of items) {
       if (it.kind === "reply" && it.id > since.current && !spoken.current.has(it.id)) {
         spoken.current.add(it.id);
-        speak(it.text);
+        if (speak(it.text)) readHere.current = true;
       }
     }
-  }, [items, muted]);
+  }, [items, reading]);
 
-  const send = async (text: string, photos: Photo[], files: Attachment[]) => {
+  // a conversation by voice: once its answer has been read to its end, it listens for your reply
+  // (not while it's still working, or waiting for your yes)
+  const [listenNow, setListenNow] = useState(0);
+  const turn = useRef({ followUp, voiced, reading, status: run?.status });
+  useEffect(() => {
+    turn.current = { followUp, voiced, reading, status: run?.status };
+  }, [followUp, voiced, reading, run?.status]);
+  useEffect(
+    () =>
+      useSpeaking.subscribe((s, prev) => {
+        if (s.finished === prev.finished || !readHere.current) return;
+        readHere.current = false;
+        const t = turn.current;
+        if (t.followUp && t.voiced && t.reading && t.status && !live(t.status)) setListenNow(s.finished);
+      }),
+    [],
+  );
+
+  const send = async (text: string, photos: Photo[], files: Attachment[], byVoice = false) => {
     setSending(true);
     try {
       const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), files: filesOf(files), context: requestContext() }, { timeoutMs: timeoutFor(photos, files) });
       since.current = events.length ? events[events.length - 1].id : 0;
+      setVoiced(byVoice);
       setAtEnd(true);
       if (r.steering) toast("Added. It reads it after the current step.");
       return true;
@@ -526,7 +557,7 @@ function Conversation({ runId }: { runId: number }) {
           <div className="text-[12px] text-text3">{run ? `Started ${ago(run.created_at)}${run.cwd ? ` · in ${run.cwd}` : ""}` : " "}</div>
         </div>
         {st && <Tag tone={st.tone}>{st.label}</Tag>}
-        <IconButton icon={muted ? VolumeX : Volume2} label={muted ? "Read answers aloud" : "Stop reading aloud"} active={!muted} onClick={() => (muted ? setMuted(false) : (hush(), setMuted(true)))} />
+        <IconButton icon={reading ? Volume2 : VolumeX} label={reading ? "Stop reading answers aloud" : "Read answers aloud"} active={reading} onClick={() => (reading ? (hush(), setAloud(false)) : setAloud(true))} data-testid="read-aloud" />
         {run && upToDate && (
           <>
             <IconButton icon={Star} label={run.starred ? "Remove from favourites" : "Add to favourites"} active={!!run.starred} onClick={() => void mark({ starred: !run.starred })} className={run.starred ? "[&_svg]:fill-warn [&_svg]:text-warn" : ""} />
@@ -609,7 +640,7 @@ function Conversation({ runId }: { runId: number }) {
               </Button>
             </div>
           )}
-          <Composer placeholder={run && live(run.status) ? "Add something while it works…" : "Reply, or ask for more…"} onSend={send} busy={sending} autoFocus />
+          <Composer placeholder={run && live(run.status) ? "Add something while it works…" : "Reply, or ask for more…"} onSend={send} busy={sending} autoFocus listenNow={listenNow} />
         </div>
       </div>
     </div>

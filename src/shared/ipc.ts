@@ -48,6 +48,7 @@ export interface Prefs {
   startAtLogin: boolean;
   startHidden: boolean; // at login, start in the tray without opening the window
   quickShortcut: string; // global shortcut for Quick capture, an Electron accelerator
+  talkShortcut: string; // global shortcut that opens the assistant listening ("" = none)
   notifications: boolean;
   quietHours: boolean; // hold reminders between quietFrom and quietTo, ring them after
   quietFrom: string; // HH:mm
@@ -60,6 +61,7 @@ export const DEFAULT_PREFS: Prefs = {
   startAtLogin: false,
   startHidden: true,
   quickShortcut: "CommandOrControl+Shift+Space",
+  talkShortcut: "Alt+Space",
   notifications: true,
   quietHours: false,
   quietFrom: "22:30",
@@ -107,6 +109,7 @@ export type Command =
   | { type: "new"; what: "todo" | "item" | "note" | "money" | "income" | "event" | "reminder" | "clip" | "date" | "person" | "thing" | "capture" }
   | { type: "palette" }
   | { type: "sync" }
+  | { type: "talk" } // talk to the assistant: start listening (or stop, if it is)
   | { type: "shortcuts" }
   | { type: "create"; drafts: Draft[]; say?: string };
 
@@ -121,6 +124,8 @@ export interface PickedImage {
   name: string;
   data: string; // data URL as read from disk
 }
+
+export type MicAccess = "granted" | "denied" | "restricted";
 
 export type Identity = { method: "touchid"; ok: boolean; message?: string } | { method: "password" };
 
@@ -174,6 +179,8 @@ export interface Bridge {
     saveFile(input: { name: string; data: string }): Promise<string | null>;
   };
   clipboard: { write(text: string): void; read(): Promise<string> };
+  // whether this computer lets Redline use the microphone (a Mac asks you the first time)
+  mic: { access(): Promise<MicAccess> };
   quick: {
     open(): void;
     close(): void;
@@ -222,6 +229,7 @@ export const CH = {
   saveFile: "files:save-file",
   clipboard: "clipboard:write",
   clipboardRead: "clipboard:read",
+  micAccess: "mic:access",
   quickOpen: "quick:open",
   quickClose: "quick:close",
   quickContext: "quick:context",

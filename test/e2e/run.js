@@ -22,6 +22,8 @@ const PORT = Number(process.env.E2E_PORT || 4310);
 const API = `http://127.0.0.1:${PORT}/api`;
 const OUT = path.resolve(process.env.E2E_OUT || path.join(os.tmpdir(), "redline-e2e-out"));
 const ONLY = process.env.E2E_ONLY ? process.env.E2E_ONLY.split(",") : null;
+// what the fake microphone plays: quiet, two seconds of voice-like sound, quiet
+const SPEECH = require("./speech").speechWav(path.join(os.tmpdir(), "redline-e2e-speech.wav"));
 const EMAIL = "me@example.com";
 const PASSWORD = "correct horse battery";
 fs.mkdirSync(OUT, { recursive: true });
@@ -92,7 +94,8 @@ const errors = [];
 async function launch() {
   app = await _electron.launch({
     executablePath: require("electron"),
-    args: [path.join(ROOT, "out/main/index.js"), "--no-sandbox"],
+    // a fake microphone that "says" something (test/e2e/speech.js), and no real one
+    args: [path.join(ROOT, "out/main/index.js"), "--no-sandbox", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${SPEECH}%noloop`],
     env: { ...process.env, REDLINE_DATA_DIR: dataDir, REDLINE_E2E: "1", REDLINE_API_URL: API },
   });
   // the Quick capture window is made at start too: take the main one
@@ -629,6 +632,78 @@ async function scenario(name, fn, always = false) {
     await chip.getByRole("button", { name: "Save plumber-notes.txt" }).click();
     await until("saved to disk as sent", async () => fs.existsSync(out) && fs.readFileSync(out, "utf8") === NOTE);
     fs.rmSync(out, { force: true });
+  });
+
+  await scenario("talking: it hears you, stops when you do, sends what you said, reads the answer aloud and listens for your reply", async () => {
+    const log = path.join(workdir, "voice.log");
+    if (fs.existsSync(log)) fs.unlinkSync(log);
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.getByRole("button", { name: /Server/ }).first().waitFor({ timeout: 20000 });
+    const box = win.getByTestId("composer-box");
+    await box.getByTestId("mic").click();
+    // listening: the meter follows the sound
+    await win.getByTestId("hearing").getByText(/Listening/).waitFor();
+    await win.getByTestId("mic-level").waitFor();
+    await win.waitForTimeout(1500);
+    await win.screenshot({ path: path.join(OUT, "voice-listening.png") }).catch(() => {});
+    // the voice stops, so it does: the server writes it down, and it's about to go
+    await win.getByTestId("voice-countdown").waitFor({ timeout: 20000 });
+    const heard = await win.getByTestId("composer").inputValue();
+    if (heard !== "Read me something short") throw new Error(`the box says "${heard}"`);
+    await win.screenshot({ path: path.join(OUT, "voice-countdown.png") }).catch(() => {});
+    // it goes by itself, as something said: the answer is read aloud
+    await win.getByTestId("timeline").getByText("Here is something short: the kettle is on.").waitFor({ timeout: 30000 });
+    if (!/spoken=1/.test(win.url())) throw new Error(`not opened as a spoken chat: ${win.url()}`);
+    const said = await until("the answer read aloud", async () => {
+      const t = fs.existsSync(log) && fs.readFileSync(log, "utf8");
+      return t && /^speak \S+ Here is something short/m.test(t) && t;
+    });
+    if (!/^listen audio\/webm \d+/m.test(said)) throw new Error(`the recording didn't reach the server as webm:\n${said}`);
+    // read to its end, it listens for your reply; Esc lets it go without sending anything
+    await box.locator('[data-testid="mic"][data-state="listening"]').waitFor({ timeout: 20000 });
+    await win.screenshot({ path: path.join(OUT, "voice-follow-up.png") }).catch(() => {});
+    await win.keyboard.press("Escape");
+    await box.locator('[data-testid="mic"][data-state="idle"]').waitFor();
+    await win.waitForTimeout(800);
+    if ((await win.locator("[data-user-message]").count()) !== 1) throw new Error("something more was sent");
+    if (await win.getByTestId("voice-error").count()) throw new Error(`an error: ${await win.getByTestId("voice-error").innerText()}`);
+  });
+
+  await scenario("talking: the talk shortcut opens the assistant listening, and stops it; Edit keeps what you said", async () => {
+    await go("/todos");
+    const registered = await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Alt+Space"));
+    if (!registered) throw new Error("Alt+Space isn't registered");
+    const talk = () =>
+      app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows().find((x) => !x.webContents.getURL().includes("#/quick"));
+        w.webContents.send("ev:command", { type: "talk" }); // what the shortcut sends
+      });
+    await talk();
+    const box = win.getByTestId("composer-box");
+    await box.locator('[data-testid="mic"][data-state="listening"]').waitFor({ timeout: 15000 });
+    if (!/#\/assistant\?voice=1/.test(win.url())) throw new Error(`not on the assistant: ${win.url()}`);
+    await win.waitForTimeout(1200);
+    await talk(); // again: stop, and it's written down
+    await win.getByTestId("voice-countdown").waitFor({ timeout: 20000 });
+    await win.getByTestId("voice-countdown").getByRole("button", { name: "Edit" }).click();
+    await win.getByTestId("voice-countdown").waitFor({ state: "detached" });
+    await win.waitForTimeout(3000); // longer than the countdown: nothing goes
+    if ((await win.getByTestId("composer").inputValue()) !== "Read me something short") throw new Error("what you said isn't in the box");
+    if (!/#\/assistant\?voice=1/.test(win.url())) throw new Error("it was sent after Edit");
+    await win.getByTestId("composer").fill("");
+  });
+
+  await scenario("talking: Settings shows what it heard, and the talk shortcut", async () => {
+    await go("/settings?section=assistant");
+    await win.getByTestId("talk-shortcut").getByText("Alt + Space").waitFor();
+    const row = win.getByText("Talking to it").locator("xpath=ancestor::*[.//button[@data-testid='mic']][1]");
+    await row.getByTestId("mic").click();
+    await win.getByText("Listening… say something").waitFor();
+    await win.waitForTimeout(1200);
+    await row.getByTestId("mic").click();
+    await win.getByTestId("heard").getByText("“Read me something short”").waitFor({ timeout: 20000 });
+    await win.screenshot({ path: path.join(OUT, "voice-settings-talk.png") }).catch(() => {});
   });
 
   await scenario("settings: theme, wallpaper, effects and text size apply at once", async () => {

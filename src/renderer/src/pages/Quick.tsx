@@ -1,6 +1,6 @@
 // Quick capture: a small window over whatever you're doing (Ctrl/⌘ ⇧ Space). Type what someone
-// told you, press Enter, check what the AI found, press Enter again to save it. Esc puts the
-// window away. It keeps no records of its own: what you save is made by the main window, so it
+// told you (or click the microphone and say it), press Enter, check what the AI found, press Enter
+// again to save it. Esc puts the window away. It keeps no records of its own: what you save is made by the main window, so it
 // syncs like everything else.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -14,6 +14,8 @@ import { applyTheme } from "@/theme";
 import { ACTION_AREA, ACTION_ICON, describe, sortOut, whoseOf } from "@/lib/capture";
 import { ApiError } from "@/lib/api";
 import { bridge, isMac } from "@/lib/bridge";
+import { useListen } from "@/lib/listen";
+import { MicButton, MicLevel } from "@/components/assistant/Voice";
 
 type Phase = "input" | "thinking" | "review" | "saved" | "error" | "signed-out";
 
@@ -59,7 +61,21 @@ export default function Quick() {
     });
   }, []);
 
+  // or say it: what your server writes down goes in the box
+  const voice = useListen((said) => {
+    setText((t) => (t.trim() ? `${t.trim()} ${said}` : said));
+    if (phase === "review" || phase === "error") setPhase("input");
+    requestAnimationFrame(() => box.current?.focus());
+  });
+  // the window goes away when you click elsewhere: the microphone goes with it
+  useEffect(() => {
+    const away = () => voice.cancel();
+    window.addEventListener("blur", away);
+    return () => window.removeEventListener("blur", away);
+  }, [voice]);
+
   const close = () => {
+    voice.cancel();
     bridge.quick.close();
     setTimeout(reset, 200);
   };
@@ -117,6 +133,12 @@ export default function Quick() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // talking: Esc stops it without sending, Enter waits for what you said
+      if (voice.state !== "idle") {
+        if (e.key === "Escape") (e.preventDefault(), voice.cancel());
+        else if (e.key === "Enter") e.preventDefault();
+        return;
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         if (phase === "review" || phase === "error") setPhase("input");
@@ -131,7 +153,7 @@ export default function Quick() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const orb: OrbState = phase === "thinking" ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : text ? "listening" : "idle";
+  const orb: OrbState = phase === "thinking" || voice.writing ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : text || voice.listening ? "listening" : "idle";
   const chosen = keep.filter(Boolean).length;
 
   return (
@@ -234,9 +256,23 @@ export default function Quick() {
             </div>
 
             <div className="flex items-center gap-2 border-t border-line px-4 py-2.5">
-              <span className="text-[11px] text-text3">
-                <Kbd>↵</Kbd> {phase === "review" ? "save" : "sort it out"} · <Kbd>⇧ ↵</Kbd> new line · <Kbd>Esc</Kbd> {phase === "review" ? "back" : "close"}
-              </span>
+              {(phase === "input" || phase === "error") && <MicButton state={voice.state} onClick={voice.toggle} size={28} />}
+              {voice.listening ? (
+                <span className="flex min-w-0 items-center gap-2 text-[12px] text-accent-text" data-testid="hearing">
+                  <MicLevel level={voice.level} />
+                  Listening… <Kbd>Esc</Kbd> cancel
+                </span>
+              ) : voice.writing ? (
+                <span className="text-[12px] text-accent-text">Writing down what you said…</span>
+              ) : voice.error ? (
+                <span className="min-w-0 truncate text-[11.5px] text-warn" title={voice.error}>
+                  {voice.error}
+                </span>
+              ) : (
+                <span className="text-[11px] text-text3">
+                  <Kbd>↵</Kbd> {phase === "review" ? "save" : "sort it out"} · <Kbd>⇧ ↵</Kbd> new line · <Kbd>Esc</Kbd> {phase === "review" ? "back" : "close"}
+                </span>
+              )}
               <div className="flex-1" />
               {phase === "review" && (
                 <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => setPhase("input")}>

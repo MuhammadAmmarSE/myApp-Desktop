@@ -38,7 +38,8 @@ export function buildTrayMenu() {
   const p = getPrefs();
   const menu = Menu.buildFromTemplate([
     { label: "Open Redline", click: showMain },
-    { label: `Quick capture\t${accel(p.quickShortcut)}`, click: openQuick },
+    { label: p.quickShortcut ? `Quick capture\t${accel(p.quickShortcut)}` : "Quick capture", click: openQuick },
+    { label: p.talkShortcut ? `Talk to the assistant\t${accel(p.talkShortcut)}` : "Talk to the assistant", click: () => command({ type: "talk" }) },
     { type: "separator" },
     { label: next ? `Next: ${next.title} · ${day(next.at)} ${time(next.at)}` : "Nothing coming up", enabled: !!next, click: () => next && command({ type: "navigate", to: next.url }) },
     { type: "separator" },

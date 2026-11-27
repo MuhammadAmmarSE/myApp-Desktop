@@ -39,6 +39,7 @@ import {
   Brain,
 } from "lucide-react";
 import { search, type Kind } from "@myapp/core";
+import { talk } from "@/lib/talk";
 import { commands, GROUP_ORDER, GROUP_WORD, recordEntries, type Entry, type Open } from "@/lib/searchIndex";
 import { bridge, modKey } from "@/lib/bridge";
 import { navigate } from "@/lib/router";
@@ -96,6 +97,7 @@ export function runOpen(open: Open, opts: { shift?: boolean } = {}) {
   } else if ("run" in open) {
     if (open.run === "sync") void syncNow().then((ok) => (ok ? toast.success("Up to date") : toast.error("Couldn't sync right now")));
     if (open.run === "quick") bridge.quick.open();
+    if (open.run === "talk") talk();
     if (open.run === "capture") navigate("/capture");
     if (open.run === "shortcuts") useUI.getState().setShortcuts(true);
     if (open.run === "export") void exportAll();

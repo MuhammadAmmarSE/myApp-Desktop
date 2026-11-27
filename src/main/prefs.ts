@@ -1,5 +1,5 @@
 // The settings the main process acts on: closing to the tray, starting at login, the Quick
-// capture shortcut, notifications and quiet hours, the zoom. Kept with the window's size and place.
+// capture and talk shortcuts, notifications and quiet hours, the zoom. Kept with the window's size and place.
 import path from "path";
 import { app } from "electron";
 import { DEFAULT_PREFS, type Prefs } from "@shared/ipc";
@@ -26,6 +26,7 @@ export function cleanPrefs(patch: Partial<Prefs>): Partial<Prefs> {
   if (!patch || typeof patch !== "object") return out;
   for (const k of ["closeToTray", "startAtLogin", "startHidden", "notifications", "quietHours"] as const) if (typeof patch[k] === "boolean") out[k] = patch[k];
   if (typeof patch.quickShortcut === "string" && patch.quickShortcut.length <= 60) out.quickShortcut = patch.quickShortcut;
+  if (typeof patch.talkShortcut === "string" && patch.talkShortcut.length <= 60) out.talkShortcut = patch.talkShortcut;
   if (typeof patch.quietFrom === "string" && HHMM.test(patch.quietFrom)) out.quietFrom = patch.quietFrom;
   if (typeof patch.quietTo === "string" && HHMM.test(patch.quietTo)) out.quietTo = patch.quietTo;
   if (typeof patch.zoom === "number" && Number.isFinite(patch.zoom)) out.zoom = Math.min(1.4, Math.max(0.8, Math.round(patch.zoom * 100) / 100));

@@ -56,3 +56,8 @@ mac:
   icon: build/icon.icns
   category: public.app-category.productivity
   darkModeSupport: true
+  # talking to the assistant: macOS asks before the microphone is used, with these words
+  extendInfo:
+    NSMicrophoneUsageDescription: Redline listens when you talk to the assistant or Capture, and sends the recording only to your own server.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist

@@ -16,7 +16,12 @@ export interface Settings {
   density: "comfortable" | "compact";
   sidebar: "full" | "icons";
   weekStart: 0 | 1; // Sunday or Monday
-  readAloud: boolean; // the assistant's replies are read out
+  readAloud: boolean; // every reply of the assistant is read out
+  speakReplies: boolean; // replies to what you SAID are read out (readAloud covers the rest)
+  voiceAutoSend: boolean; // what you say goes out by itself after a moment (Edit stops it)
+  voiceFollowUp: boolean; // after a reply is read to its end, listen for your answer
+  listenLang: "auto" | "en" | "ur"; // the language you speak ("auto" works it out each time)
+  urduScript: "roman" | "urdu"; // spoken Urdu written in English letters ("aap kaise hain") or Urdu script
   naturalVoice: boolean; // read in your server's ElevenLabs voice when it has one (this computer's voice otherwise)
   voiceId: string; // the ElevenLabs voice picked here; "" = the server's default
   searches: string[]; // recent searches, newest first
@@ -36,6 +41,11 @@ export const DEFAULTS: Settings = {
   sidebar: "full",
   weekStart: 1,
   readAloud: false,
+  speakReplies: true,
+  voiceAutoSend: true,
+  voiceFollowUp: true,
+  listenLang: "auto",
+  urduScript: "roman",
   naturalVoice: true,
   voiceId: "",
   searches: [],

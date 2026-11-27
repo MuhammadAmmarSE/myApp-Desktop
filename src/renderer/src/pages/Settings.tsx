@@ -21,7 +21,11 @@ import {
   Info,
   Keyboard,
   Laptop,
+  Languages,
   LogOut,
+  Mic,
+  MessageSquareReply,
+  Send,
   Monitor,
   Moon,
   Palette,
@@ -39,6 +43,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { hush, loadVoices, loadVoiceStatus, speak, useSpeaking, useVoiceServer, type Voice } from "@/lib/speech";
+import { useListen } from "@/lib/listen";
+import { MicButton, MicLevel } from "@/components/assistant/Voice";
 import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
 import type { AppInfo, Prefs } from "@shared/ipc";
 import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
@@ -317,11 +323,12 @@ function Reminders() {
 }
 
 // ---------------- startup & shortcut ----------------
-function Startup() {
-  const { prefs, change } = usePrefs();
+// a global shortcut: click, press the keys you want (Esc keeps the old ones)
+function ShortcutButton({ value, onRecord, onRecording, testId }: { value: string; onRecord: (acc: string) => void; onRecording?: (on: boolean) => void; testId?: string }) {
   const [recording, setRecording] = useState(false);
   const mac = isMac();
   useEffect(() => {
+    onRecording?.(recording);
     if (!recording) return;
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
@@ -330,12 +337,28 @@ function Startup() {
       const acc = toAccelerator(e, mac);
       if (!acc) return;
       setRecording(false);
-      void change({ quickShortcut: acc }).then((ok) => ok && toast.success(`Quick capture: ${describeAccelerator(acc, mac)}`));
+      onRecord(acc);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording]);
+  return (
+    <button
+      type="button"
+      onClick={() => setRecording(true)}
+      className={clsx("h-8 min-w-[150px] rounded-[9px] px-3 text-[13px] font-medium transition-shadow", recording ? "animate-pulse bg-accent-soft text-accent-text shadow-[inset_0_0_0_1px_var(--c-accent)]" : "bg-surface2 hairline hover:bg-hover")}
+      data-testid={testId}
+    >
+      {recording ? "Press keys…" : value ? describeAccelerator(value, mac) : "Off — click to set"}
+    </button>
+  );
+}
+
+function Startup() {
+  const { prefs, change } = usePrefs();
+  const [recording, setRecording] = useState(false);
+  const mac = isMac();
   if (!prefs) return null;
   return (
     <>
@@ -352,9 +375,7 @@ function Startup() {
         </Row>
         <Row title="Quick capture, from any app" sub={recording ? "Press the keys you want — Esc to keep the old ones" : "A small window to tell Redline something without leaving what you're doing"} icon={Keyboard}>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setRecording(true)} className={clsx("h-8 min-w-[150px] rounded-[9px] px-3 text-[13px] font-medium transition-shadow", recording ? "animate-pulse bg-accent-soft text-accent-text shadow-[inset_0_0_0_1px_var(--c-accent)]" : "bg-surface2 hairline hover:bg-hover")} data-testid="shortcut">
-              {recording ? "Press keys…" : describeAccelerator(prefs.quickShortcut, mac)}
-            </button>
+            <ShortcutButton value={prefs.quickShortcut} testId="shortcut" onRecording={setRecording} onRecord={(acc) => void change({ quickShortcut: acc }).then((ok) => ok && toast.success(`Quick capture: ${describeAccelerator(acc, mac)}`))} />
             <Button size="sm" variant="ghost" onClick={() => bridge.quick.open()}>
               Try it
             </Button>
@@ -512,12 +533,125 @@ function VoiceRows() {
   );
 }
 
+// talking: whether your server can write it down, a try, the shortcut, and how it behaves
+function TalkRows() {
+  const voice = useVoiceServer();
+  const s = useSettings();
+  const { prefs, change } = usePrefs();
+  const [heard, setHeard] = useState("");
+  const tryIt = useListen((said) => setHeard(said));
+  const mac = isMac();
+  const canListen = voice.state === "on" && voice.listen;
+  const readWhen = s.readAloud ? "always" : s.speakReplies ? "talk" : "never";
+  return (
+    <>
+      <Row
+        title="Talking to it"
+        sub={
+          tryIt.listening ? (
+            <span className="flex items-center gap-2 text-accent-text">
+              <MicLevel level={tryIt.level} /> Listening… say something
+            </span>
+          ) : tryIt.writing ? (
+            "Writing down what you said…"
+          ) : tryIt.error ? (
+            <span className="text-warn">{tryIt.error}</span>
+          ) : heard ? (
+            <span data-testid="heard">
+              It heard: <span className="text-text">“{heard}”</span>
+            </span>
+          ) : canListen ? (
+            "Click the microphone by the message box. It listens until you stop talking, and your server writes it down (English and Urdu)."
+          ) : voice.state === "unknown" ? (
+            "Checking your server…"
+          ) : voice.state === "old" ? (
+            "Your server needs an update before you can talk to it."
+          ) : (
+            "Talking goes through your server's natural voice: put an ElevenLabs key (ELEVENLABS_API_KEY) in its .env."
+          )
+        }
+        icon={Mic}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[12.5px] text-text3">{tryIt.state === "idle" ? "Try it" : ""}</span>
+          <MicButton state={tryIt.state} onClick={() => (setHeard(""), tryIt.toggle())} size={34} />
+        </div>
+      </Row>
+      {prefs && (
+        <Row title="Talk from any app" sub="Brings Redline up with the assistant listening; press it again to stop" icon={Keyboard}>
+          <div className="flex items-center gap-2">
+            <ShortcutButton value={prefs.talkShortcut} testId="talk-shortcut" onRecord={(acc) => void change({ talkShortcut: acc }).then((ok) => ok && toast.success(`Talk: ${describeAccelerator(acc, mac)}`))} />
+            {prefs.talkShortcut && (
+              <Button size="sm" variant="ghost" onClick={() => void change({ talkShortcut: "" })}>
+                Turn off
+              </Button>
+            )}
+          </div>
+        </Row>
+      )}
+      <Row title="Read answers aloud" sub={voice.state === "on" && s.naturalVoice ? "In your ElevenLabs voice" : "With this computer's voice"} icon={Sparkles}>
+        <Segmented
+          size="sm"
+          value={readWhen}
+          onChange={(v) => s.set(v === "always" ? { readAloud: true, speakReplies: true } : v === "talk" ? { readAloud: false, speakReplies: true } : { readAloud: false, speakReplies: false })}
+          options={[
+            { value: "talk", label: "When I talk" },
+            { value: "always", label: "Always" },
+            { value: "never", label: "Never" },
+          ]}
+        />
+      </Row>
+      <Row title="What you say" sub={s.voiceAutoSend ? "Goes out a moment after you stop talking (Edit stops it)" : "Waits in the box for you to send"} icon={Send}>
+        <Segmented
+          size="sm"
+          value={s.voiceAutoSend ? "auto" : "wait"}
+          onChange={(v) => s.set({ voiceAutoSend: v === "auto" })}
+          options={[
+            { value: "auto", label: "Sends by itself" },
+            { value: "wait", label: "Waits for me" },
+          ]}
+        />
+      </Row>
+      <Row title="After an answer is read aloud" sub="Listen for your reply, so a conversation keeps going without clicking" icon={MessageSquareReply}>
+        <Segmented
+          size="sm"
+          value={s.voiceFollowUp ? "listen" : "stop"}
+          onChange={(v) => s.set({ voiceFollowUp: v === "listen" })}
+          options={[
+            { value: "listen", label: "Listen for my reply" },
+            { value: "stop", label: "Stop there" },
+          ]}
+        />
+      </Row>
+      <Row title="You speak" sub="Automatic works out the language each time; picking one is a little more accurate" icon={Languages}>
+        <Segmented
+          size="sm"
+          value={s.listenLang}
+          onChange={(v) => s.set({ listenLang: v })}
+          options={[
+            { value: "auto", label: "Automatic" },
+            { value: "en", label: "English" },
+            { value: "ur", label: "Urdu" },
+          ]}
+        />
+      </Row>
+      <Row title="Urdu is written" sub="What you say in Urdu, and its answers: “aap kaise hain” or اردو" icon={Languages}>
+        <Segmented
+          size="sm"
+          value={s.urduScript}
+          onChange={(v) => s.set({ urduScript: v })}
+          options={[
+            { value: "roman", label: "In English letters" },
+            { value: "urdu", label: "In Urdu script" },
+          ]}
+        />
+      </Row>
+    </>
+  );
+}
+
 function AssistantSettings() {
   const op = useOperator();
-  const voice = useVoiceServer();
-  const naturalVoice = useSettings((s) => s.naturalVoice);
-  const readAloud = useSettings((s) => s.readAloud);
-  const set = useSettings((s) => s.set);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     void op.loadStatus();
@@ -545,10 +679,8 @@ function AssistantSettings() {
             label="Let it take tasks"
           />
         </Row>
-        <Row title="Read answers aloud" sub={voice.state === "on" && naturalVoice ? "In your ElevenLabs voice" : "With this computer's voice"} icon={Sparkles}>
-          <Switch checked={readAloud} onChange={(v) => set({ readAloud: v })} label="Read answers aloud" />
-        </Row>
         <VoiceRows />
+        <TalkRows />
         <Row title="Approving a step" sub={isMac() ? "Touch ID, or your password" : "Your account password, checked by your server"} icon={ShieldCheck}>
           <Tag tone="success">Always asked</Tag>
         </Row>

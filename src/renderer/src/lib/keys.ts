@@ -9,13 +9,15 @@ import { useSettings } from "@/store/settings";
 import { syncNow } from "@/store/sync";
 import { toast } from "@/components/ui/Toast";
 
-export type Shortcut = { keys: string; what: string; group: string };
+// global: one of the shortcuts set in Settings (the list shows the keys chosen there)
+export type Shortcut = { keys: string; what: string; group: string; global?: "quick" | "talk" };
 const M = () => (isMac() ? "⌘" : "Ctrl");
 
 export const SHORTCUTS = (): Shortcut[] => [
   { keys: `${M()} K`, what: "Search everything", group: "Everywhere" },
   { keys: `${M()} ⇧ C`, what: "Capture with AI", group: "Everywhere" },
-  { keys: `${M()} ⇧ Space`, what: "Quick capture, from any app", group: "Everywhere" },
+  { keys: `${M()} ⇧ Space`, what: "Quick capture, from any app", group: "Everywhere", global: "quick" },
+  { keys: isMac() ? "⌥ Space" : "Alt Space", what: "Talk to the assistant, from any app", group: "Everywhere", global: "talk" },
   { keys: `${M()} N`, what: "New to-do", group: "Everywhere" },
   { keys: `${M()} ⇧ N`, what: "New note", group: "Everywhere" },
   { keys: `${M()} ⇧ E`, what: "Add an expense", group: "Everywhere" },

@@ -22,6 +22,8 @@ import { typing } from "@/lib/keys";
 import { layerOpen } from "@/lib/layers";
 import { ago } from "@/lib/format";
 import { ease, rise } from "@/theme/motion";
+import { useListen } from "@/lib/listen";
+import { MicButton, MicLevel } from "@/components/assistant/Voice";
 
 type Phase = "input" | "thinking" | "review" | "saved" | "error";
 type Past = { text: string; at: number };
@@ -70,7 +72,23 @@ export default function Capture() {
     typed.current = setTimeout(() => setWriting(false), 2500);
   };
   useEffect(() => () => void (typed.current && clearTimeout(typed.current)), []);
-  const orb: OrbState = phase === "thinking" ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : writing ? "listening" : "idle";
+  // or say it: what your server writes down goes in the box, after anything already there
+  const voice = useListen((said) => {
+    setText((t) => (t.trim() ? `${t.trim()} ${said}` : said));
+    box.current?.focus();
+  });
+  useEffect(() => {
+    if (!voice.listening) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation(); // not closing anything else as well
+      voice.cancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [voice]);
+  const orb: OrbState = phase === "thinking" || voice.writing ? "thinking" : phase === "saved" ? "done" : phase === "error" ? "error" : writing || voice.listening ? "listening" : "idle";
   const chosen = keep.filter((k, i) => k && !moved[i]).length;
   const cards = useMemo(() => {
     const whose = whoseOf(actions, keep, funds);
@@ -228,7 +246,21 @@ export default function Capture() {
                 className="!px-5 !pt-4 !text-[15px] leading-relaxed"
               />
               <div className="flex items-center gap-2 border-t border-line px-4 py-2.5">
-                <span className="text-[11.5px] text-text3">{text.trim() ? `${text.trim().length} characters` : "Plain words are fine"}</span>
+                {phase !== "thinking" && !reviewing && <MicButton state={voice.state} onClick={voice.toggle} size={30} />}
+                {voice.listening ? (
+                  <span className="flex min-w-0 items-center gap-2 text-[12.5px] text-accent-text" data-testid="hearing">
+                    <MicLevel level={voice.level} />
+                    <span className="truncate">Listening… it stops when you do</span>
+                  </span>
+                ) : voice.writing ? (
+                  <span className="text-[12.5px] text-accent-text">Writing down what you said…</span>
+                ) : voice.error ? (
+                  <span className="min-w-0 truncate text-[12px] text-warn" title={voice.error} data-testid="voice-error">
+                    {voice.error}
+                  </span>
+                ) : (
+                  <span className="text-[11.5px] text-text3">{text.trim() ? `${text.trim().length} characters` : "Plain words are fine, or click the microphone and say it"}</span>
+                )}
                 <div className="flex-1" />
                 {text && phase !== "thinking" && (
                   <Button size="sm" variant="ghost" onClick={() => (setText(""), reset(false))}>

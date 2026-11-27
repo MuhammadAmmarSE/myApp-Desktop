@@ -1,13 +1,26 @@
 // Every keyboard shortcut on one sheet (Ctrl/⌘ /).
+import { useEffect, useState } from "react";
 import { Keyboard } from "lucide-react";
+import type { Prefs } from "@shared/ipc";
 import { Dialog, Kbd } from "@/components/ui";
 import { SHORTCUTS } from "@/lib/keys";
+import { bridge, isMac } from "@/lib/bridge";
+import { describeAccelerator } from "@/lib/accelerator";
 import { useUI } from "@/store/ui";
 
 export function ShortcutsHelp() {
   const open = useUI((s) => s.shortcuts);
   const set = useUI((s) => s.setShortcuts);
-  const list = SHORTCUTS();
+  // the global ones as set in Settings (one turned off isn't listed)
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    void bridge.prefs.get().then(setPrefs);
+  }, [open]);
+  const keysOf = (acc: string) => describeAccelerator(acc, isMac()).replace(/ \+ /g, " ");
+  const list = SHORTCUTS()
+    .map((s) => (s.global && prefs ? { ...s, keys: keysOf(s.global === "quick" ? prefs.quickShortcut : prefs.talkShortcut) } : s))
+    .filter((s) => s.keys);
   const groups = Array.from(new Set(list.map((s) => s.group)));
   return (
     <Dialog open={open} onClose={() => set(false)} width={760} icon={Keyboard} title="Keyboard shortcuts" description="Redline is quick with the keyboard. Quick capture works even when Redline isn't in front.">
