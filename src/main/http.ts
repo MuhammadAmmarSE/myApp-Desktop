@@ -47,6 +47,8 @@ export async function request<T = any>(
   try {
     json = await res.json();
   } catch {
+    // 502-504 come from the web server in front (nginx): it is up, the Redline service behind it isn't answering
+    if (res.status >= 502 && res.status <= 504) return { ok: false, code: "SERVER_DOWN", message: `Your server isn't answering right now (${res.status}). The Redline service on it may be stopped or restarting.`, status: res.status };
     return { ok: false, code: "BAD_RESPONSE", message: res.ok ? "The server's answer couldn't be read." : `Server error (${res.status}).`, status: res.status };
   }
   if (!json || json.ok !== true) {
