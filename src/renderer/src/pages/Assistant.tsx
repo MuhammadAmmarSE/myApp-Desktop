@@ -416,6 +416,8 @@ function Conversation({ runId }: { runId: number }) {
         try {
           const r = await api<{ run: Run; events: OpEvent[]; last: number }>("GET", `/operator/runs/${runId}/events?after=${after}&wait=20&include_children=1&known=${known}`, undefined, { timeoutMs: 30000 });
           if (!alive) break;
+          // its status moved (it finished, or a report woke it): the chat list follows
+          if (known && known !== r.run.status) void useOperator.getState().loadRuns();
           known = r.run.status;
           setRun(r.run);
           setError("");

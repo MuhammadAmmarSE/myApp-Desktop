@@ -43,9 +43,22 @@ Object.assign(process.env, {
   FAKE_CLAUDE_LOG: path.join(work, "claude.log"),
   FAKE_CLAUDE_REPORT: "done",
   FAKE_CLAUDE_REPORT_MS: "6000",
+  // the shop session's turns, for the to and fro (written below)
+  FAKE_CLAUDE_PLAN: path.join(work, "claude-plan.json"),
   // where Claude reports back to (on a real server, its public https address)
   REDLINE_PUBLIC_URL: `http://127.0.0.1:${port}`,
 });
+
+fs.writeFileSync(
+  process.env.FAKE_CLAUDE_PLAN,
+  JSON.stringify({
+    session_01ShopAbcd: [
+      { expect: "checkout page", reports: [{ status: "needs_you", summary: "Checkout is built and the tests pass. May I push it to main?", after_ms: 1500 }] },
+      { expect: "^Yes, push it to main\\.$", reports: [{ status: "needs_you", summary: "Pushed to main. May I delete the old branch feature/cart?", after_ms: 1500 }] },
+      { expect: "open a pull request", reports: [{ status: "done", summary: "Kept feature/cart and opened a pull request for the cleanup.", pull_request: "https://github.com/example/shop/pull/12", after_ms: 1500 }] },
+    ],
+  })
+);
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const day = (n) => iso(new Date(Date.now() + n * 86400000));
@@ -63,10 +76,28 @@ function operatorTurn(body) {
   if (/photo/i.test(text) || Array.isArray(first)) return { content: "I can see the photo you sent." };
   // what the fake microphone "said" (the ElevenLabs stand-in writes it down as this)
   if (/read me something short/i.test(text)) return { content: "Here is something short: the kettle is on." };
-  // "tell my website session to …": sends it to the saved Claude session called website
+  // what the newest message is: a note from the app about Claude's reports, or a tool's result
+  const newest = msgs[msgs.length - 1] || {};
+  const note = newest.role === "user" && /^\(From the app, not typed by the owner\) Reports from/.test(String(newest.content || "")) ? newest.content : "";
+  const result = newest.role === "tool" ? String(newest.content || "") : "";
+  // "tell my website session to …": sends it to the saved Claude session called website; its
+  // report wakes the chat, which says so
   if (/website session/i.test(text)) {
     if (steps === 0) return { tool_calls: [call("claude_send", { session: "website", message: "Add a contact page to the site, then commit and push." })] };
+    if (/“website” finished/.test(note)) return { content: "Claude finished: the contact page is in pull request 7." };
     return { content: "Sent it to your website session. Claude's answer will be in the session." };
+  }
+  // "have my shop session …": the to and fro. Claude asks to push (it drafts yes: you approve), asks
+  // to delete a branch (it drafts yes: you say no and what instead, so it drafts that), then finishes
+  if (/shop session/i.test(text)) {
+    if (steps === 0) return { tool_calls: [call("claude_send", { session: "shop", message: "In o/shop build the checkout page, run the tests, and push to main when they pass." })] };
+    if (result && /"not_done":true/.test(result) && /open a pull request/.test(result))
+      return { tool_calls: [call("claude_send", { session: "shop", message: "Don't delete feature/cart; open a pull request for the cleanup instead.", why: "You said to keep the branch and open a pull request." })] };
+    if (result && /"answered":true/.test(result)) return { content: "Told Claude." };
+    if (/May I push it to main\?/.test(note)) return { tool_calls: [call("claude_send", { session: "shop", message: "Yes, push it to main.", why: "You asked for checkout to go to main once the tests pass." })] };
+    if (/May I delete the old branch/.test(note)) return { tool_calls: [call("claude_send", { session: "shop", message: "Yes, delete feature/cart." })] };
+    if (/“shop” finished/.test(note)) return { content: "Claude kept feature/cart and opened pull request 12." };
+    return { content: "Sent it to your shop session; it will report back here." };
   }
   // your records: looks up "my brother", then proposes his shoe size and a to-do to save
   if (/brother/i.test(text)) {

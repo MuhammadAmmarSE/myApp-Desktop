@@ -10,7 +10,7 @@ export interface OpEvent {
   data: Record<string, any>;
 }
 
-export type ApprovalState = "pending" | "approved" | "denied" | "expired" | "stopped";
+export type ApprovalState = "pending" | "approved" | "denied" | "expired" | "stopped" | "superseded"; // superseded: Claude moved on before the owner answered
 export interface AskItem {
   approvalId: number;
   summary: string;
@@ -269,7 +269,15 @@ export function describeStep(s: Step): { title: string; code: string; why: strin
   if (s.tool === "propose_changes") return { title, code: "", why: a.why || "" };
   // a Claude session on the server (older conversations) says its own title
   if (s.tool === "claude_task") return { title, code: s.claude ? "" : a.title || "", why: "" };
-  if (s.tool === "claude_send") return { title: a.session ? `Sent to “${a.session}” on Claude` : title, code: a.message || "", why: "" };
+  if (s.tool === "claude_send") {
+    // an answer to something Claude asked waits for the owner's yes first
+    if (s.ask && a.session) {
+      const st = s.ask.state;
+      const t = st === "pending" ? `Answer for “${a.session}”` : st === "approved" ? `Answered “${a.session}” on Claude` : `Answer for “${a.session}”, not sent`;
+      return { title: t, code: a.message || "", why: "" };
+    }
+    return { title: a.session ? `Sent to “${a.session}” on Claude` : title, code: a.message || "", why: "" };
+  }
   if (s.tool === "claude_save_session") return { title, code: [a.name, a.note].filter(Boolean).join(" · "), why: "" };
   return { title, code: "", why: "" };
 }

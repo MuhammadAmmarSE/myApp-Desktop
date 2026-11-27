@@ -51,7 +51,28 @@ const DECIDED: Record<string, { label: string; tone: string }> = {
   denied: { label: "You said no", tone: "text-danger" },
   expired: { label: "No answer in time, so it wasn't done", tone: "text-text3" },
   stopped: { label: "Stopped", tone: "text-text3" },
+  superseded: { label: "Not sent: Claude moved on before you answered", tone: "text-text3" },
 };
+
+// Claude's question and the answer the assistant drafted for it, as the approval shows them
+function ClaudeExchange({ session, question, answer }: { session: string; question: string; answer: string }) {
+  return (
+    <div className="flex flex-col gap-2" data-claude-exchange>
+      <div className="flex flex-col gap-1 rounded-[10px] bg-surface p-2.5 hairline">
+        <span className="text-[11.5px] text-text3">{`Claude${session ? ` · ${session}` : ""} asks`}</span>
+        <p className="selectable whitespace-pre-wrap text-[13.5px] text-text" data-claude-question>
+          {question}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1 rounded-[10px] bg-surface p-2.5 shadow-[inset_0_0_0_1px_var(--c-accent)]">
+        <span className="text-[11.5px] text-accent-text">Your answer, if you approve</span>
+        <p className="selectable whitespace-pre-wrap text-[13.5px] font-semibold text-text" data-claude-answer>
+          {answer}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function AskBox({ ask }: { ask: AskItem }) {
   const decide = useOperator((s) => s.decide);
@@ -61,6 +82,8 @@ export function AskBox({ ask }: { ask: AskItem }) {
   const d = ask.detail || {};
   const reasons: string[] = Array.isArray(d.reasons) ? d.reasons : [];
   const pending = ask.state === "pending";
+  // an answer the assistant drafted to a question one of your Claude sessions asked
+  const claude = typeof d.claude_question === "string" && typeof d.claude_message === "string";
 
   const approve = async () => {
     if (busy) return;
@@ -98,8 +121,8 @@ export function AskBox({ ask }: { ask: AskItem }) {
       </div>
       {pending && (
         <>
-          <div className="text-[14px] font-semibold">{ask.summary}</div>
-          {reasons.length > 0 && (
+          {claude ? <ClaudeExchange session={String(d.claude_session || "")} question={d.claude_question} answer={d.claude_message} /> : <div className="text-[14px] font-semibold">{ask.summary}</div>}
+          {reasons.length > 0 && !claude && (
             <div className="flex flex-wrap gap-1.5">
               {reasons.map((r) => (
                 <Tag key={r} tone="warn">
@@ -113,7 +136,16 @@ export function AskBox({ ask }: { ask: AskItem }) {
           {d.change && <Code text={d.change} lines={16} diff />}
           {d.from && <p className="text-[12px] text-text2">Value from {d.from}; it is never shown to the AI.</p>}
           {d.body && <Code text={typeof d.body === "string" ? d.body : JSON.stringify(d.body, null, 2)} lines={8} />}
-          {noting && <Input value={note} onChange={setNote} placeholder="Why not? (optional — the AI reads it)" autoFocus onKeyDown={(e) => e.key === "Enter" && deny()} aria-label="Why not" />}
+          {noting && (
+            <Input
+              value={note}
+              onChange={setNote}
+              placeholder={claude ? "What should Claude be told instead? (optional)" : "Why not? (optional — the AI reads it)"}
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && deny()}
+              aria-label={claude ? "What to tell Claude instead" : "Why not"}
+            />
+          )}
           <div className="flex gap-2">
             <Button icon={X} loading={busy === "deny"} disabled={!!busy} onClick={() => (noting ? deny() : setNoting(true))} className="flex-1">
               {noting ? "Say no" : "No"}

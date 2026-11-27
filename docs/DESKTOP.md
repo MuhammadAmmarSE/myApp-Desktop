@@ -60,7 +60,18 @@ main process (Node)                       screens (Chromium, sandboxed)
   `reports_after`; the first request doesn't wait, to learn which reports are old) brings it to
   `reportNews`. `components/shell/ApprovalsHost.tsx` announces a new one with a toast you can open
   (not on that chat, which shows it) and a notification when the window isn't in front. Settings
-  shows each session's last report. Nothing acts on a report by itself.
+  shows each session's last report.
+- **The to and fro**: a report that Claude finished, needs you or couldn't do it wakes its chat on
+  the server, and the assistant answers. When Claude asks something, the server gates any send to
+  that session (it is waiting on a question), so the assistant's drafted answer arrives as an
+  ordinary approval: the corner card and the notification, and in the chat `AskBox`
+  (`components/assistant/Steps.tsx`) shows Claude's question and "Your answer, if you approve"
+  (`detail.claude_question` / `claude_message`), with Why. Approve needs Touch ID or your password,
+  as always; No asks "What should Claude be told instead?", which the assistant drafts as a new
+  answer. An answer Claude moved on from shows "Not sent: Claude moved on before you answered"
+  (state `superseded`); core's `describeStep` titles the step "Answer for “shop”", "Answered
+  “shop” on Claude" or "…, not sent". When the open chat's status moves (it finished, or a report
+  woke it) the chat list reloads.
 - **Your records in the assistant**: the server reads its copy of your records to answer and
   never changes one. A look is one quiet line; changes it proposes come as a card
   (`components/assistant/Proposal.tsx`). Save runs `lib/proposals.ts`: cleaned again against this

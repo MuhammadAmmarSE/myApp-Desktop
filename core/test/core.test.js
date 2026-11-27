@@ -540,6 +540,13 @@ ok("operator: Claude sessions on claude.ai", () => {
   assert.strictEqual(c.parseClaudeSession("session_01; rm -rf /"), null);
   const sent = c.describeStep({ kind: "step", tool: "claude_send", args: { session: "website", message: "Add a contact page" }, status: "ok" });
   assert.deepStrictEqual(sent, { title: "Sent to “website” on Claude", code: "Add a contact page", why: "" });
+  // an answer to something Claude asked: what happened to it is in the title
+  const ask = (state) => ({ approvalId: 1, summary: "", detail: {}, state, note: "", at: 1 });
+  const answer = (state) => c.describeStep({ kind: "step", tool: "claude_send", args: { session: "shop", message: "Yes, push it." }, status: "ok", ask: ask(state) }).title;
+  assert.deepStrictEqual(
+    ["pending", "approved", "denied", "superseded", "expired"].map(answer),
+    ["Answer for “shop”", "Answered “shop” on Claude", "Answer for “shop”, not sent", "Answer for “shop”, not sent", "Answer for “shop”, not sent"]
+  );
   assert.strictEqual(c.describeStep({ kind: "step", tool: "claude_save_session", args: { name: "website", note: "o/site" }, status: "ok" }).code, "website · o/site");
   assert.strictEqual(c.describeStep({ kind: "step", tool: "claude_sessions", args: {}, status: "ok" }).title, "Looked at your Claude sessions");
   assert.strictEqual(c.claudeLinkIn("Sent to “website”. Its answer shows in the session: https://claude.ai/code/session_01AbCdEf"), "https://claude.ai/code/session_01AbCdEf");

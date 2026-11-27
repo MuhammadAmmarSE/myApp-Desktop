@@ -444,9 +444,10 @@ async function scenario(name, fn, always = false) {
     const [[report]] = await db().query("SELECT status, session_name, pull_request FROM claude_reports");
     if (!report || report.status !== "done" || report.session_name !== "website") throw new Error(`report: ${JSON.stringify(report)}`);
     if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "claude-report.png") });
-    // the chat list says it, as the last thing in that chat
+    // the report woke the chat, which says so: the chat list shows that as its newest line
+    await win.getByTestId("timeline").getByText("Claude finished: the contact page is in pull request 7.").waitFor({ timeout: 20000 });
     await go("/assistant");
-    await win.getByTestId("chat-list").getByText("Claude · website: Added the contact page", { exact: false }).waitFor();
+    await win.getByTestId("chat-list").getByText("Claude finished: the contact page is in pull request 7.").waitFor();
     // back in Settings: what it last reported, renamed, forgotten and put back
     await go("/settings?section=assistant");
     await box.getByTestId("claude-sessions-about").getByText("Allowed domains", { exact: false }).waitFor();
@@ -464,6 +465,72 @@ async function scenario(name, fn, always = false) {
     await win.getByRole("status").filter({ hasText: "Forgot “shop site”" }).getByRole("button", { name: "Undo" }).click();
     await renamed.waitFor();
     await until("back on the server", async () => (await db().query("SELECT id FROM claude_sessions WHERE name = 'shop site'"))[0].length === 1);
+  });
+
+  await scenario("claude to and fro: it asks, the assistant drafts the answer, you approve with your password; a no with what to say instead; then it finishes", async () => {
+    await app.evaluate(({ shell }) => {
+      global.__opened = [];
+      shell.openExternal = async (u) => void global.__opened.push(u);
+    });
+    const opened = () => app.evaluate(() => global.__opened.slice());
+    await go("/settings?section=assistant");
+    const box = win.getByTestId("claude-sessions");
+    await box.waitFor({ timeout: 15000 });
+    await box.getByLabel("The session's link").fill("https://claude.ai/code/session_01ShopAbcd");
+    await box.getByLabel("Its name").fill("shop");
+    await box.getByRole("button", { name: "Add session" }).click();
+    await box.locator('[data-claude-session="shop"]').waitFor();
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.keyboard.press("n");
+    await win.getByTestId("composer").fill("Have my shop session build checkout and push it to main");
+    await win.getByTestId("send").click();
+    const tl = win.getByTestId("timeline");
+    await tl.getByText("Sent it to your shop session; it will report back here.").waitFor({ timeout: 30000 });
+    // Claude asks; the chat wakes and the assistant's answer waits for you, beside Claude's question
+    await tl.locator('[data-claude-report="needs_you"]').getByText("May I push it to main?", { exact: false }).waitFor({ timeout: 20000 });
+    const ask = tl.locator('[data-ask="pending"]');
+    await ask.locator("[data-claude-question]").getByText("Checkout is built and the tests pass. May I push it to main?").waitFor({ timeout: 20000 });
+    await ask.locator("[data-claude-answer]").getByText("Yes, push it to main.").waitFor();
+    await ask.getByText("Why: You asked for checkout to go to main once the tests pass.").waitFor();
+    await tl.locator('[data-claude-report="needs_you"]').getByRole("button", { name: "Answer in Claude" }).waitFor();
+    const [[before]] = await db().query("SELECT last_message FROM claude_sessions WHERE name = 'shop'");
+    if (/Yes, push/.test(before.last_message || "")) throw new Error("the answer went before it was approved");
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "claude-ask.png") });
+    // approving needs your password
+    await ask.getByTestId("approve").click();
+    const pw = dialog().getByLabel("Password");
+    await pw.fill(PASSWORD);
+    await pw.press("Enter");
+    await until("the answer went to Claude", async () => /^Yes, push it to main\./.test((await db().query("SELECT last_message FROM claude_sessions WHERE name = 'shop'"))[0][0].last_message || ""));
+    await tl.getByText("Told Claude.").first().waitFor({ timeout: 20000 });
+    // it asks again: say no, and what to tell it instead
+    await tl.locator("[data-claude-question]").getByText("Pushed to main. May I delete the old branch feature/cart?").waitFor({ timeout: 20000 });
+    const ask2 = tl.locator('[data-ask="pending"]');
+    await ask2.locator("[data-claude-answer]").getByText("Yes, delete feature/cart.").waitFor();
+    await ask2.getByRole("button", { name: "No", exact: true }).click();
+    await ask2.getByLabel("What to tell Claude instead").fill("keep it, open a pull request instead");
+    await ask2.getByRole("button", { name: "Say no" }).click();
+    await tl.locator('[data-ask="denied"]').getByText("keep it, open a pull request instead", { exact: false }).waitFor({ timeout: 15000 });
+    // the assistant drafts that instead; it waits for you again
+    const ask3 = tl.locator('[data-ask="pending"]');
+    await ask3.locator("[data-claude-answer]").getByText("Don't delete feature/cart; open a pull request for the cleanup instead.").waitFor({ timeout: 20000 });
+    const [[mid]] = await db().query("SELECT last_message FROM claude_sessions WHERE name = 'shop'");
+    if (/delete feature\/cart\.$/.test(mid.last_message || "") || /^Yes, delete/.test(mid.last_message || "")) throw new Error("the answer you said no to went");
+    await ask3.getByTestId("approve").click();
+    await dialog().getByLabel("Password").fill(PASSWORD);
+    await dialog().getByLabel("Password").press("Enter");
+    // it finishes; the chat wakes once more and says so
+    const done = tl.locator('[data-claude-report="done"]');
+    await done.getByText("Kept feature/cart and opened a pull request for the cleanup.").waitFor({ timeout: 20000 });
+    await tl.getByText("Claude kept feature/cart and opened pull request 12.").waitFor({ timeout: 20000 });
+    await done.getByRole("button", { name: "Pull request" }).click();
+    await until("the pull request opened", async () => (await opened()).includes("https://github.com/example/shop/pull/12"));
+    const [qs] = await db().query("SELECT q.closed_how FROM claude_questions q JOIN claude_sessions s ON s.id = q.session_row_id WHERE s.name = 'shop' ORDER BY q.report_id");
+    if (qs.map((q) => q.closed_how).join(",") !== "answered,answered") throw new Error(`questions: ${JSON.stringify(qs)}`);
+    const [ap] = await db().query("SELECT a.status FROM op_approvals a WHERE a.summary LIKE 'Answer Claude in “shop”%' ORDER BY a.id");
+    if (ap.map((a) => a.status).join(",") !== "approved,denied,approved") throw new Error(`approvals: ${JSON.stringify(ap)}`);
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "claude-done.png") });
   });
 
   await scenario("settings: the natural voice from the server; a voice picked here reads answers", async () => {
