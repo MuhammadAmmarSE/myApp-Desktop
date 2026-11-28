@@ -52,6 +52,7 @@ const Owed = lazy(() => import("@/pages/Owed"));
 const Interests = lazy(() => import("@/pages/Interests"));
 const Assistant = lazy(() => import("@/pages/Assistant"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const Nudges = lazy(() => import("@/pages/Nudges"));
 const Quick = lazy(() => import("@/pages/Quick"));
 
 const ROUTES: [string, ComponentType<{ params: Record<string, string> }>][] = [
@@ -76,6 +77,7 @@ const ROUTES: [string, ComponentType<{ params: Record<string, string> }>][] = [
   ["/assistant", Assistant],
   ["/assistant/:id", Assistant],
   ["/settings", Settings],
+  ["/nudges", Nudges],
 ];
 
 // one key per section, so moving inside a section (one note to the next) doesn't replay the entrance
@@ -181,6 +183,7 @@ function ShellEffects() {
   useEffect(() => {
     startSync();
     startAlerts();
+    startNudges();
     return bridge.on("command", handleCommand);
   }, []);
   // what the Quick capture window needs to know

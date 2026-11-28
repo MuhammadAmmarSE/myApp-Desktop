@@ -15,7 +15,7 @@ export const requestContext = () => {
   } catch {
     tz = "";
   }
-  return { today: isoDate(d), time: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, weekday: WEEKDAYS_LONG[d.getDay()], tz, currency: useSettings.getState().currency };
+  return { today: isoDate(d), time: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, weekday: WEEKDAYS_LONG[d.getDay()], tz, currency: useSettings.getState().currency, nudges_self: useSettings.getState().nudges.self };
 };
 
 // your server's natural voice is on and wanted, and its assistant takes this

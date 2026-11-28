@@ -1,9 +1,11 @@
 // What should ring, worked out from the records: the same list the phone schedules (reminders,
 // events before they start, timed to-dos, birthdays and anniversaries, the car's papers and service,
 // warranties ending). The main process shows them at the right time, even with the window closed.
-import { addDays, currentPapers, groupNumber, isoDate, nextOccurrence, PAPER_REMIND, parseDate, RENEW_REMIND, toEpoch, WARRANTY_REMIND, yearsAt } from "@myapp/core";
+import { addDays, currentPapers, groupNumber, isoDate, nextOccurrence, nudgeAlerts, PAPER_REMIND, parseDate, pruneSent, RENEW_REMIND, toEpoch, WARRANTY_REMIND, yearsAt } from "@myapp/core";
 import type { Alert } from "@shared/ipc";
 import { useRecords } from "@/store/records";
+import { useSettings } from "@/store/settings";
+import { openTarget } from "@/lib/nudges";
 import { bridge } from "@/lib/bridge";
 
 const HORIZON_MS = 60 * 86400000;
@@ -97,6 +99,33 @@ export function upcomingAlerts(now = Date.now()): Alert[] {
 }
 
 
+// Nudges ring too (core's nudgeAlerts): at their time, out of quiet hours, at most the day's cap,
+// each once. What this computer has rung or handed to the main process is kept in the records' meta
+// (nudge_sent: alert key -> when), so a nudge that came in late from another device rings now, one
+// already rung never rings again, and the cap counts across restarts. One whose time has passed is
+// sent with that time; the main process shows it on its next tick.
+export function nudgeAlertList(now = Date.now()): Alert[] {
+  const st = useRecords.getState();
+  let sent: Record<string, number> = {};
+  try {
+    sent = JSON.parse(st.meta.nudge_sent || "{}") || {};
+  } catch {
+    sent = {};
+  }
+  sent = pruneSent(sent, now);
+  // handed over but not rung yet: worked out again now (it may be done, snoozed or dismissed)
+  for (const k of Object.keys(sent)) if (sent[k] > now) delete sent[k];
+  const out: Alert[] = [];
+  for (const a of nudgeAlerts(st.lists.nudge, now, useSettings.getState().nudges, sent)) {
+    const rec = st.lists.nudge.find((n) => n.id === a.id);
+    out.push({ at: Math.max(a.at, now), title: a.title, body: a.body, url: (rec && openTarget(rec)) || "/nudges", key: `nudge:${a.key}` });
+    sent[a.key] = Math.max(a.at, now);
+  }
+  const next = JSON.stringify(sent);
+  if (next !== (st.meta.nudge_sent || "{}")) st.setMeta("nudge_sent", next);
+  return out;
+}
+
 // sends the list to the main process whenever records change (a moment later, once)
 let timer: ReturnType<typeof setTimeout> | null = null;
 let started = false;
@@ -104,7 +133,7 @@ export function scheduleAlerts(ms = 1500) {
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
-    void bridge.reminders.schedule(upcomingAlerts());
+    void bridge.reminders.schedule([...upcomingAlerts(), ...nudgeAlertList()]);
   }, ms);
 }
 export function startAlerts() {
@@ -114,6 +143,14 @@ export function startAlerts() {
   useRecords.subscribe((s) => {
     if (s.byId !== last) {
       last = s.byId;
+      scheduleAlerts();
+    }
+  });
+  // what nudges ring follows their settings
+  let nudges = useSettings.getState().nudges;
+  useSettings.subscribe((s) => {
+    if (s.nudges !== nudges) {
+      nudges = s.nudges;
       scheduleAlerts();
     }
   });

@@ -6,10 +6,11 @@
 import { cleanRule, cleanTags } from "./actions";
 import { isoDate, isoTime, isValidDate, isValidTime, toEpoch } from "./dates";
 import { dayWord, money, monthDay, time12 } from "./format";
-import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES, type ItemData, type MoneyData, type OwedData } from "./kinds";
+import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, NUDGE_KINDS, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES, type ItemData, type MoneyData, type OwedData } from "./kinds";
 import { owedSummary } from "./owed";
 import { POT_TYPE_META, POT_TYPES, cleanSplit, potMoveFor, ruleWords, splitTotal } from "./pots";
 import { itemsNote, sharedFund } from "./purchase";
+import { hideSecrets } from "./nudges";
 import type { SearchDoc } from "./search";
 import { minutesInWords } from "./work";
 
@@ -26,6 +27,7 @@ type FieldType =
   | "currency" // PKR
   | "split" // an income's pots: [{ pot_id, amount }]
   | "rule" // a pot's share of each income: { kind: percent|fixed|fill, value }
+  | "refs" // ids of any of your records: ["tod_..."] (ones that aren't there are left out)
   | { int: [number, number] }
   | { one: readonly string[] }
   | { ref: Kind };
@@ -181,7 +183,7 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
     required: ["name"],
   },
   wish: { label: "Wish", fields: { name: "text", price: "num", link: "text", priority: one(["high", "normal", "low"]), notes: "long", got: "bool", got_on: "date" }, required: ["name"] },
-  memory: { label: "Memory", fields: { text: "long", topic: "text" }, required: ["text"] },
+  memory: { label: "Memory", fields: { text: "long", topic: "text", date: "date", related_ids: "refs" }, required: ["text"] },
   // money someone gave you to spend for them; what you spend of it is money with paid_from, and
   // settling it (giving back, keeping, being paid back) is done on its hisaab page in the app
   fund: { label: "Money given to you to spend", fields: { from: "text", person_id: ref("person"), purpose: "text", amount: "num", currency: "currency", date: "date", notes: "long" }, required: ["from", "amount"] },
@@ -199,13 +201,20 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
     fields: { type: one(["keeping", "loan"]), who: "text", person_id: ref("person"), amount: "num", currency: "currency", date: "date", account: one(["cash", "bank", "card", "wallet"]), due: "date", notes: "long" },
     required: ["who", "amount"],
   },
+  // something to bring up at a moment (date + time): a reminder in your words, a question to ask,
+  // a message. Waiting, it's on Today and in the assistant; done or dismissed in the app
+  nudge: {
+    label: "Nudge",
+    fields: { text: "text", kind: one(NUDGE_KINDS), date: "date", time: "time", priority: one(["high", "normal", "low"]), reason: "text", related_ids: "refs", status: one(["pending", "done", "dismissed"]) },
+    required: ["text"],
+  },
 };
 
 // the fields of every kind in words, for the AI's tool description
 export function describeKinds(): string {
   const word = (t: FieldType): string => {
     if (typeof t === "string")
-      return t === "days" ? "days-before list like [7,1]" : t === "details" ? "[{label,value}]" : t === "split" ? "[{pot_id,amount}]" : t === "rule" ? "{kind:percent|fixed|fill,value}" : t;
+      return t === "days" ? "days-before list like [7,1]" : t === "details" ? "[{label,value}]" : t === "split" ? "[{pot_id,amount}]" : t === "rule" ? "{kind:percent|fixed|fill,value}" : t === "refs" ? "list of record ids" : t;
     if ("one" in t) return t.one.join("|");
     if ("int" in t) return `${t.int[0]}-${t.int[1]}`;
     return `id of a ${t.ref}`;
@@ -299,6 +308,14 @@ function cleanField(name: string, type: FieldType, v: unknown, ctx: { get: (id: 
         if (!r || r.kind !== "pot") return { error: `${name}: there's no pot with the id ${id || "(none)"}` };
       }
       return { value: cleanSplit(v, 1e12, () => true) };
+    }
+    case "refs": {
+      if (!Array.isArray(v)) return { error: `${name} is a list of record ids` };
+      const ids = v
+        .map((x) => (typeof x === "string" ? x.trim() : ""))
+        .filter((id, i, a) => id && a.indexOf(id) === i && !!ctx.get(id))
+        .slice(0, 10);
+      return { value: ids };
     }
     case "rule": {
       const r = cleanRule(v);
@@ -406,6 +423,10 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
       out.type = type;
     }
     if (kind === "car_log" && out.type === "paper" && out.title && !(CAR_PAPERS as readonly string[]).includes(out.title as string)) out.title = "Other";
+    if (kind === "nudge") {
+      out.text = hideSecrets(out.text as string);
+      if (typeof out.reason === "string") out.reason = hideSecrets(out.reason);
+    }
     if (byteSize(out) > MAX_RECORD_BYTES) return { error: "that's too big for one record" };
     return { change: { op: "create", kind, data: out }, ignored };
   }
@@ -424,6 +445,10 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
       // a smaller amount trims the split it already had
       if ("amount" in out && !("split" in out) && Array.isArray(found.data.split) && found.data.split.length && splitTotal(found.data.split) > (out.amount as number)) out.split = found.data.split;
       potFields(out, found.data);
+    }
+    if (found.kind === "nudge") {
+      if (typeof out.text === "string") out.text = hideSecrets(out.text);
+      if (typeof out.reason === "string") out.reason = hideSecrets(out.reason);
     }
     if (byteSize(Object.assign({}, found.data, out)) > MAX_RECORD_BYTES) return { error: "that's too big for one record" };
     return { change: { op: "update", id, kind: found.kind, set: out, title: describeRecord(found.kind, found.data).title }, ignored };
@@ -559,6 +584,17 @@ export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { 
       return Object.assign({ type: "spend", currency: ctx.currency, moves: [], archived: false }, typeof ctx.potColor === "number" ? { color: ctx.potColor } : {}, d);
     case "owed":
       return Object.assign({ type: "keeping", currency: ctx.currency, date: ctx.today, account: "cash", moves: [], closed: false }, d);
+    case "nudge": {
+      const { date, time, ...rest } = d;
+      return Object.assign({ kind: "reminder", priority: "normal", related_ids: [] }, rest, {
+        text: hideSecrets(rest.text || ""),
+        due_at: toEpoch(date || ctx.today, time || "09:00"),
+        status: "pending",
+        snooze_until: null,
+        created_by: "assistant",
+        category: "assistant",
+      });
+    }
     default:
       return d;
   }
@@ -568,7 +604,7 @@ export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { 
 export function updatedRecordData(kind: Kind, prev: any, set: Record<string, unknown>): any {
   const next: any = Object.assign({}, prev);
   for (const [k, v] of Object.entries(set)) {
-    if (kind === "reminder" && (k === "date" || k === "time")) continue;
+    if ((kind === "reminder" || kind === "nudge") && (k === "date" || k === "time")) continue;
     if (v === null) delete next[k];
     else next[k] = v;
   }
@@ -576,6 +612,13 @@ export function updatedRecordData(kind: Kind, prev: any, set: Record<string, unk
     const was = new Date(prev.at || Date.now());
     next.at = toEpoch((set.date as string) || isoDate(was), (set.time as string) || isoTime(was));
   }
+  if (kind === "nudge" && ("date" in set || "time" in set)) {
+    const was = new Date(prev.due_at || Date.now());
+    next.due_at = toEpoch((set.date as string) || isoDate(was), (set.time as string) || isoTime(was));
+    if (next.status === "snoozed") next.snooze_until = null;
+    if (next.status !== "done" && next.status !== "dismissed") next.status = "pending";
+  }
+  if (kind === "nudge" && (set.status === "done" || set.status === "dismissed")) next.done_at = Date.now();
   if (kind === "money" && ("type" in set || "category" in set)) next.category = category(next.category, next.type);
   return next;
 }
@@ -668,7 +711,13 @@ export function describeRecord(kind: Kind, d: any, opts: { currency?: string; to
     case "wish":
       return { title: d.name || "Wish", detail: join([d.price ? money(d.price, cur) : "", d.got ? "Got it" : d.priority === "high" ? "High priority" : ""]) };
     case "memory":
-      return { title: d.text || "Memory", detail: d.topic ? `About ${d.topic}` : "Remembered" };
+      return { title: d.text || "Memory", detail: join([d.topic ? `About ${d.topic}` : "Remembered", d.date ? `from ${day(d.date)}` : ""]) };
+    case "nudge": {
+      const at = typeof d.due_at === "number" ? new Date(d.status === "snoozed" && d.snooze_until ? d.snooze_until : d.due_at) : null;
+      const when = at ? `${dayWord(isoDate(at), today)} at ${time12(isoTime(at))}` : "";
+      const state = d.status === "snoozed" ? "Snoozed" : d.status === "done" ? "Done" : d.status === "dismissed" ? "Dismissed" : "";
+      return { title: d.text || "Nudge", detail: join([d.kind === "question" ? "A question" : d.kind === "message" ? "A message" : "A reminder", when, state]) };
+    }
     case "fund":
       return { title: `${d.purpose || "Money"} · from ${d.from || "someone"}`, detail: join([`Gave you ${money(Number(d.amount) || 0, cur)}`, day(d.date), d.closed ? "Settled" : ""]) };
     case "owed": {
