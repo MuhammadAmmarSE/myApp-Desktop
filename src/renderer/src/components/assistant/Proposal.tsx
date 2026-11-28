@@ -1,8 +1,11 @@
 // What the assistant does with your records, in the conversation: a quiet line for each look it
 // takes ("Looked through your records · Found 2"), and a card for the changes it proposes. Each
 // change says what happens to what; Save keeps it (saved here like any change you make), Skip
-// leaves it; Save all for the rest. Nothing is saved until you click.
-import { useEffect } from "react";
+// leaves it; Save all for the rest. Nothing is saved until you click, with one exception: reminders
+// the assistant sets (new nudges) when Settings → Nudges says to save them by itself. The server
+// marks such a card "auto" and this computer checks its own setting again before saving; a
+// reminder that repeats one already waiting is skipped.
+import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
 import {
@@ -43,6 +46,7 @@ import {
 import { describeChange, describeStep, type Kind, type Rec, type Step } from "@myapp/core";
 import { Button, Spin, Tag, toast } from "@/components/ui";
 import { decide, decisionsOf, flush, useProposals } from "@/lib/proposals";
+import { nudgeRepeats } from "@/lib/nudges";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 
@@ -75,6 +79,7 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   fund: HandCoins,
   pot: PiggyBank,
   owed: Banknote,
+  nudge: BellRing,
 };
 const READ_ICON: Record<string, LucideIcon> = { find_records: Search, get_records: Search, money_totals: Calculator, my_overview: LayoutList, app_guide: BookOpen };
 
@@ -111,6 +116,27 @@ export function ProposalCard({ runId, step }: { runId: number; step: Step }) {
     else if (r.saved) toast.undo(r.saved === 1 ? "Saved" : `Saved ${r.saved} changes`, r.undo);
   };
 
+  // the assistant's own reminders, saved without asking when you've said so
+  const self = useSettings((s) => s.nudges.self);
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!p.auto || !self || autoRan.current) return;
+    autoRan.current = true;
+    useProposals.getState().load();
+    const d = decisionsOf(runId, p, useProposals.getState().pending);
+    const todo = p.changes.map((_, i) => i).filter((i) => !d[i] && p.changes[i].op === "create" && p.changes[i].kind === "nudge");
+    if (!todo.length) return;
+    const data = (i: number) => (p.changes[i] as { data: Record<string, unknown> }).data;
+    const repeats = todo.filter((i) => nudgeRepeats({ text: String(data(i).text || ""), related_ids: Array.isArray(data(i).related_ids) ? (data(i).related_ids as string[]) : [] }));
+    const r = decide(
+      runId,
+      p,
+      todo.filter((i) => !repeats.includes(i)),
+      repeats,
+    );
+    if (r.saved) toast.undo(r.saved === 1 ? "Reminder saved" : `${r.saved} reminders saved`, r.undo);
+  }, [p, runId, self]);
+
   const why = typeof step.args?.why === "string" ? step.args.why : "";
   return (
     <motion.div
@@ -125,7 +151,7 @@ export function ProposalCard({ runId, step }: { runId: number; step: Step }) {
           <Sparkles size={16} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-semibold">{open.length ? (p.changes.length === 1 ? "Save this?" : "Save these?") : "Your changes"}</div>
+          <div className="text-[13.5px] font-semibold">{open.length ? (p.changes.length === 1 ? "Save this?" : "Save these?") : p.auto && self ? "Saved by itself" : "Your changes"}</div>
           {why && <div className="truncate text-[12px] text-text3">{why}</div>}
         </div>
         {open.length ? <Tag tone="accent">{open.length} to decide</Tag> : <Check size={16} className="text-success" />}

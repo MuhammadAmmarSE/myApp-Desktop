@@ -41,14 +41,16 @@ import {
   User as UserIcon,
   Volume2,
   type LucideIcon,
+  BellRing,
 } from "lucide-react";
+import { NudgeSettings } from "@/components/NudgeSettings";
 import { hush, loadVoices, loadVoiceStatus, speak, useSpeaking, useVoiceServer, type Voice } from "@/lib/speech";
 import { useListen } from "@/lib/listen";
 import { MicButton, MicLevel } from "@/components/assistant/Voice";
 import { ClaudeSessions } from "@/components/assistant/ClaudeSessions";
-import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
+import { CURRENCIES, describeRecord, memoryDateWord, THEMES, type Rec, type Theme } from "@myapp/core";
 import type { AppInfo, Prefs, ShortcutKey } from "@shared/ipc";
-import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
+import { Button, Card, confirmDialog, DatePicker, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
 import { BrandMark } from "@/components/shell/BrandMark";
 import { WALLPAPERS, wallpaperUrl } from "@/components/shell/Background";
 import { useSettings, type Background } from "@/store/settings";
@@ -66,13 +68,14 @@ import { setQuery, useQuery } from "@/lib/router";
 import { ago, plural } from "@/lib/format";
 import { rise } from "@/theme/motion";
 
-type SectionId = "appearance" | "you" | "reminders" | "startup" | "assistant" | "memory" | "account" | "data" | "about";
+type SectionId = "appearance" | "you" | "reminders" | "startup" | "assistant" | "nudges" | "memory" | "account" | "data" | "about";
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "you", label: "You", icon: UserIcon },
   { id: "reminders", label: "Reminders", icon: Bell },
   { id: "startup", label: "Startup & shortcut", icon: Power },
   { id: "assistant", label: "Assistant", icon: Bot },
+  { id: "nudges", label: "Nudges", icon: BellRing },
   { id: "memory", label: "What it remembers", icon: Brain },
   { id: "account", label: "Account & devices", icon: ShieldCheck },
   { id: "data", label: "Your data", icon: Database },
@@ -121,6 +124,7 @@ export default function Settings() {
               {section === "reminders" && <Reminders />}
               {section === "startup" && <Startup />}
               {section === "assistant" && <AssistantSettings />}
+              {section === "nudges" && <NudgeSettings />}
               {section === "memory" && <Memory />}
               {section === "account" && <Account />}
               {section === "data" && <Data />}
@@ -456,6 +460,21 @@ function Memory() {
     if (draft.trim()) useRecords.getState().update<"memory">(id, { text: draft.trim() });
     setEditing(null);
   };
+  // what each one's line says: its topic, who or what it's about, from when
+  const byId = useRecords((st) => st.byId);
+  const detailOf = (m: Rec<"memory">) => {
+    const about: string[] = [];
+    for (const id of m.data.related_ids || []) {
+      const r = byId[id] as unknown as Rec | undefined;
+      if (r && !r.deleted) about.push(describeRecord(r.kind, r.data).title);
+    }
+    const parts: string[] = [];
+    if (m.data.topic) parts.push(`About ${m.data.topic}`);
+    if (about.length) parts.push(about.length > 2 ? `${about.slice(0, 2).join(", ")} +${about.length - 2}` : about.join(", "));
+    const when = memoryDateWord(m.data.date);
+    if (when) parts.push(`from ${/^(Today|Yesterday|Tomorrow)$/.test(when) ? when.toLowerCase() : when}`);
+    return parts.join(" · ");
+  };
   const forget = (id: string) => {
     const rec = useRecords.getState().byId[id];
     if (!rec) return;
@@ -464,7 +483,7 @@ function Memory() {
   };
   return (
     <>
-      <Title title="What it remembers" sub="The assistant keeps these in mind when it answers you. Tell it about yourself in a chat and it offers to remember; or add something here." />
+      <Title title="What it remembers" sub="The assistant keeps these in mind when it answers you: the ones that matter most to what you're asking (by topic, who it's about, how recent) go to each conversation. Tell it about yourself in a chat and it offers to remember; or add something here." />
       <Card className="mb-5" data-testid="memory-add">
         <div className="flex flex-col gap-2.5">
           <Input value={text} onChange={setText} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="e.g. I work from home on Fridays" aria-label="Something to remember" />
@@ -491,10 +510,11 @@ function Memory() {
                 ) : (
                   <button type="button" className="block w-full text-left" onClick={() => (setEditing(m.id), setDraft(m.data.text))}>
                     <div className="text-[13.5px]">{m.data.text}</div>
-                    {m.data.topic && <div className="text-[12px] text-text3">About {m.data.topic}</div>}
+                    {detailOf(m) && <div className="text-[12px] text-text3">{detailOf(m)}</div>}
                   </button>
                 )}
               </div>
+              <DatePicker size="sm" value={m.data.date || null} placeholder="From when" onChange={(d) => useRecords.getState().update<"memory">(m.id, { date: d })} />
               <Button size="xs" variant="ghost" className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={() => forget(m.id)}>
                 Forget
               </Button>

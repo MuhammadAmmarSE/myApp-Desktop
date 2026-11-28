@@ -43,6 +43,7 @@ export const GROUP_WORD: Record<Group, string> = {
   owed: "Your money with others",
   pot: "Pots",
   memory: "What the assistant remembers",
+  nudge: "Nudges",
 };
 export const GROUP_ORDER: Group[] = [
   "do",
@@ -72,6 +73,7 @@ export const GROUP_ORDER: Group[] = [
   "fund",
   "owed",
   "memory",
+  "nudge",
 ];
 
 // pages and actions, always there
@@ -87,6 +89,7 @@ export function commands(mod = "Ctrl"): Entry[] {
     page("saved", "Saved text", "/saved", "clips copy paste snippets"),
     page("money", "Money", "/money", "expenses spending income budget charts", `${mod} 6`),
     page("memory", "What the assistant remembers", "/settings?section=memory", "memory memories remember about me preferences ai knows"),
+    page("nudges", "Nudges", "/nudges", "nudges reminders heads up snoozed reminded"),
     page("people", "People and dates", "/people", "birthdays anniversaries family contacts", `${mod} 7`),
     page("car", "My car", "/car", "fuel petrol service insurance papers vehicle"),
     page("things", "My things", "/things", "warranty receipts gadgets appliances"),
@@ -252,6 +255,7 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       detail: `${money(o.data.amount, o.data.currency || ctx.currency)} · ${shortDate(o.data.date, today)}${o.data.closed ? " · settled" : ""}`,
       open: { to: `/owed/${o.id}` },
     });
+  for (const n of lists.nudge || []) out.push({ id: n.id, kind: "nudge", group: "nudge", title: n.data.text, keywords: `nudge reminder ${n.data.reason || ""}`, detail: `Nudge · ${n.data.status === "done" || n.data.status === "dismissed" ? "past" : "waiting"}`, open: { to: "/nudges" } });
   for (const m of lists.memory || []) out.push({ id: m.id, kind: "memory", group: "memory", title: m.data.text, keywords: m.data.topic, detail: m.data.topic ? `Remembered · ${m.data.topic}` : "Remembered", open: { to: "/settings?section=memory" } });
   for (const t of lists.thing)
     out.push({

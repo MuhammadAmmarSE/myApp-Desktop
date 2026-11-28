@@ -683,6 +683,59 @@ async function scenario(name, fn, always = false) {
     await until("forgotten on the server", async () => !(await live("memory")).some((r) => r.id === m.id));
   });
 
+  await scenario("nudges: the app's own check finds a to-do past its day; a reminder the assistant sets is saved by itself, waits on Today, is snoozed, done, and cleared", async () => {
+    // no quiet hours (the run may be at any hour), and the assistant's reminders save by themselves
+    await go("/settings?section=nudges");
+    const box = win.getByTestId("nudge-settings");
+    await box.waitFor();
+    const quiet = box.getByRole("switch", { name: "Quiet hours" });
+    if ((await quiet.getAttribute("aria-checked")) === "true") await quiet.click();
+    await box.getByRole("tab", { name: "Save by itself" }).click();
+    await until("saving by itself chosen", async () => (await box.getByRole("tab", { name: "Save by itself" }).getAttribute("aria-selected")) === "true");
+    // the app's own check: the gym membership is two days late
+    const own = await until("the app's own nudge on the server", async () => (await live("nudge")).find((r) => r.data.created_by === "app" && /gym membership/i.test(r.data.text)), 25000);
+    // ask for a reminder: it's saved by itself, no click
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.keyboard.press("n");
+    await win.getByTestId("composer").fill("Remind me to water the balcony plants");
+    await win.getByTestId("send").click();
+    const card = win.getByTestId("proposal");
+    await card.waitFor({ timeout: 30000 });
+    await card.getByText("Saved by itself").waitFor({ timeout: 15000 });
+    const mine = await until("the reminder on the server", async () => (await live("nudge")).find((r) => r.data.created_by === "assistant" && r.data.text === "Water the balcony plants"));
+    // the assistant's page lists it
+    await go("/assistant");
+    await win.getByTestId("assistant-nudges").getByText("Water the balcony plants").waitFor({ timeout: 15000 });
+    // Today has the card
+    await go("/");
+    await win.getByTestId("nudge-card").waitFor({ timeout: 15000 });
+    await win.screenshot({ path: path.join(OUT, "nudge-today.png") }).catch(() => {});
+    // on the Nudges page: snooze it for an hour, then mark it done, then clear the history
+    await go("/nudges");
+    const now = win.getByTestId("nudges-now");
+    await now.waitFor();
+    const row = (id) => win.locator(`[data-nudge="${id}"], [data-nudge-row="${id}"]`).first();
+    await row(mine.id).waitFor();
+    if ((await win.locator(`[data-nudge="${mine.id}"]`).count()) === 1) await win.locator(`[data-nudge="${mine.id}"]`).getByTestId("nudge-hour").click();
+    else {
+      await row(mine.id).getByRole("button", { name: /What to do with/ }).click();
+      await win.getByRole("menuitem", { name: "Snooze for an hour" }).click();
+    }
+    await until("snoozed on the server", async () => (await live("nudge")).find((r) => r.id === mine.id && r.data.status === "snoozed" && r.data.snooze_until > Date.now() + 30 * 60000));
+    const later = win.getByTestId("nudges-later");
+    await later.getByText("Water the balcony plants").waitFor();
+    await later.locator(`[data-nudge-row="${mine.id}"]`).getByRole("button", { name: /What to do with/ }).click();
+    await win.getByRole("menuitem", { name: "Done" }).click();
+    await until("done on the server", async () => (await live("nudge")).find((r) => r.id === mine.id && r.data.status === "done"));
+    const history = win.getByTestId("nudges-history");
+    await history.getByText("Water the balcony plants").waitFor();
+    await history.getByTestId("nudges-clear").click();
+    await until("the history cleared on the server", async () => !(await live("nudge")).some((r) => r.id === mine.id));
+    // the app's own one is still waiting (or snoozed), not cleared with the history
+    if (!(await live("nudge")).some((r) => r.id === own.id)) throw new Error("clearing the history took a waiting nudge too");
+  });
+
   await scenario("claude sessions: given once in Settings, sent work by the assistant, opened in Claude", async () => {
     // links open in the browser through the main process: record them instead (nothing reaches claude.ai)
     await app.evaluate(({ shell }) => {

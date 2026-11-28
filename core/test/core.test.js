@@ -955,4 +955,255 @@ ok("owed: what's in your hands this month, after what went to others and came ba
   assert.strictEqual(c.flowMoved(c.owedFlow([abu], "2026-09", "PKR")), false);
   assert.deepStrictEqual(c.owedFlow([abu, ali], "2026", "PKR"), { given: 201000, back: 20000, forgiven: 5000 }, "a whole year");
 });
+
+// ---------- nudges ----------
+const N = (id, data, extra) => Object.assign({ id, kind: "nudge", data: Object.assign({ kind: "message", priority: "normal", status: "pending", created_by: "app", related_ids: [] }, data), deleted: 0, created_at: 0, updated_at: 0 }, extra || {});
+const at = (d, t) => c.toEpoch(d, t);
+const nudgeWorld = (extra) => {
+  const r = (id, kind, data) => ({ id, kind, data, deleted: 0, created_at: 0, updated_at: 0 });
+  return Object.assign(
+    {
+      currency: "PKR",
+      nudges: [],
+      records: [
+        r("t1", "todo", { title: "Pay rent", due: "2026-11-26", done: false, priority: "high" }),
+        r("t2", "todo", { title: "Call the bank", due: "2026-11-25", done: false }),
+        r("t3", "todo", { title: "Fix the tap", due: "2026-11-27", done: false }),
+        r("t4", "todo", { title: "Buy a gift", due: "2026-11-28", done: false }),
+        r("t5", "todo", { title: "Old thing", due: "2026-11-01", done: true }),
+        r("p1", "person", { name: "Sara", relation: "wife" }),
+        r("d1", "date", { title: "Sara's birthday", kind: "birthday", month: 12, day: 1, person_id: "p1", remind: [7, 1, 0] }),
+        r("e1", "event", { title: "Dentist", date: "2026-11-29", time: "10:00", place: "Clinic" }),
+        r("o1", "owed", { type: "loan", who: "Ali", amount: 5000, currency: "PKR", date: "2026-11-01", due: "2026-11-20", moves: [] }),
+        r("f1", "fund", { from: "Ammi", purpose: "Groceries", amount: 5000, currency: "PKR", date: "2026-11-10", moves: [] }),
+      ],
+    },
+    extra || {}
+  );
+};
+const plain = { on: true, categories: { todos: true, events: true, dates: true, money: true, hisaab: true, loans: true, assistant: true }, quiet: { from: "22:00", to: "08:00" }, cap: 4, notify: true, self: false };
+
+ok("nudges: quiet hours, also past midnight, and the moment they end", () => {
+  const q = { from: "22:00", to: "08:00" };
+  assert.strictEqual(c.inQuietHours(at("2026-11-28", "23:00"), q), true);
+  assert.strictEqual(c.inQuietHours(at("2026-11-28", "07:59"), q), true);
+  assert.strictEqual(c.inQuietHours(at("2026-11-28", "08:00"), q), false);
+  assert.strictEqual(c.inQuietHours(at("2026-11-28", "12:00"), q), false);
+  assert.strictEqual(c.inQuietHours(at("2026-11-28", "14:00"), { from: "13:00", to: "15:00" }), true);
+  assert.strictEqual(c.inQuietHours(at("2026-11-28", "23:00"), null), false);
+  assert.strictEqual(c.afterQuietHours(at("2026-11-28", "23:00"), q), at("2026-11-29", "08:00"), "late at night: the next morning");
+  assert.strictEqual(c.afterQuietHours(at("2026-11-28", "02:00"), q), at("2026-11-28", "08:00"), "early: this morning");
+  assert.strictEqual(c.afterQuietHours(at("2026-11-28", "12:00"), q), at("2026-11-28", "12:00"));
+  const s = c.cleanNudgeSettings({ cap: 9, quiet: { from: "21:00", to: "21:00" }, categories: { money: false, nope: true }, self: true });
+  assert.deepStrictEqual([s.cap, s.quiet, s.categories.money, s.categories.todos, s.self, s.on], [4, null, false, true, true, true]);
+  assert.strictEqual(c.cleanNudgeSettings({ cap: 0 }).cap, 4);
+  assert.strictEqual(c.cleanNudgeSettings({ cap: 2 }).cap, 2);
+  assert.deepStrictEqual(c.cleanNudgeSettings(null), c.DEFAULT_NUDGE_SETTINGS);
+});
+
+ok("nudges: the daily check makes at most the cap a day, most pressing first, two late to-dos at most", () => {
+  const now = at("2026-11-28", "07:00");
+  const all = c.nudgeCandidates(nudgeWorld(), now);
+  const keys = all.map((x) => x.key).sort();
+  assert.deepStrictEqual(keys, ["date:d1:2026-12-01", "event:e1:2026-11-29", "fund:f1:2026-11-10", "owed:o1:2026-11-20", "todo-overdue:t1:2026-11-26", "todo-overdue:t2:2026-11-25", "todo-overdue:t3:2026-11-27", "todos-today:2026-11-28"]);
+  const plan = c.planNudges(nudgeWorld(), now, plain);
+  assert.deepStrictEqual(
+    plan.create.map((x) => x.data.key),
+    ["todo-overdue:t1:2026-11-26", "owed:o1:2026-11-20", "todo-overdue:t2:2026-11-25", "fund:f1:2026-11-10"],
+    "high first (rent, the late loan), then by time; the third late to-do waits; four is the cap"
+  );
+  const rent = plan.create[0];
+  assert.strictEqual(rent.id, c.nudgeId("todo-overdue:t1:2026-11-26"), "the same id on every device");
+  assert.strictEqual(rent.at, at("2026-11-27"), "stamped when its reason began, so what you did elsewhere wins");
+  assert.strictEqual(rent.data.due_at, at("2026-11-28", "10:00"));
+  assert.deepStrictEqual([rent.data.status, rent.data.created_by, rent.data.category, rent.data.kind, rent.data.priority], ["pending", "app", "todos", "question", "high"]);
+  assert.strictEqual(rent.data.text, "“Pay rent” was due on Thu 26 Nov. Do it today, or give it a new day?");
+  assert.ok(plan.create[1].data.text.startsWith("Ali was to pay back Rs 5,000"), plan.create[1].data.text);
+  assert.strictEqual(plan.create[1].data.priority, "high", "more than a week late");
+  // run again with what it made: nothing more today (the cap), and nothing made twice
+  const made = plan.create.map((x) => N(x.id, x.data));
+  const again = c.planNudges(nudgeWorld({ nudges: made }), now + 3600000, plain);
+  assert.deepStrictEqual(again.create, [], "the cap holds across checks");
+  assert.deepStrictEqual(again.resolve, []);
+  // a cap of two
+  assert.strictEqual(c.planNudges(nudgeWorld(), now, Object.assign({}, plain, { cap: 2 })).create.length, 2);
+  // switched off: nothing made; a category off: none of those
+  assert.strictEqual(c.planNudges(nudgeWorld(), now, Object.assign({}, plain, { on: false })).create.length, 0);
+  const noTodos = c.planNudges(nudgeWorld(), now, Object.assign({}, plain, { categories: Object.assign({}, plain.categories, { todos: false }) }));
+  assert.ok(noTodos.create.every((x) => x.data.category !== "todos") && noTodos.create.length === 4, JSON.stringify(noTodos.create.map((x) => x.data.key)));
+});
+
+ok("nudges: never two about the same record, never the same words twice, never one already made (whatever became of it)", () => {
+  const now = at("2026-11-28", "07:00");
+  const big = Object.assign({}, plain, { cap: 4 });
+  // the assistant is already bringing up the rent and the gift
+  const mine = N("ndg_mine", { text: "Rent!", created_by: "assistant", related_ids: ["t1", "t4"], due_at: at("2026-11-28", "12:00") });
+  const plan = c.planNudges(nudgeWorld({ nudges: [mine] }), now, big);
+  const keys = plan.create.map((x) => x.data.key);
+  assert.ok(!keys.includes("todo-overdue:t1:2026-11-26"), "not about the rent again");
+  // one dismissed last week with the same words as the loan's; one made before for the bank (done)
+  const loanText = c.nudgeCandidates(nudgeWorld(), now).find((x) => x.key.startsWith("owed:")).text;
+  const before = [N("ndg_old", { text: loanText.toUpperCase(), status: "dismissed", due_at: at("2026-11-21", "10:00") }), N(c.nudgeId("todo-overdue:t2:2026-11-25"), { text: "x", status: "done", due_at: at("2026-11-27", "10:00") })];
+  const p2 = c.planNudges(nudgeWorld({ nudges: before }), now, big);
+  const k2 = p2.create.map((x) => x.data.key);
+  assert.ok(!k2.includes("owed:o1:2026-11-20"), "the same words (in another case) came up this month");
+  assert.ok(!k2.includes("todo-overdue:t2:2026-11-25"), "done once is never made again");
+  assert.ok(k2.includes("todo-overdue:t3:2026-11-27"), "so the next late to-do gets its place");
+  // the day's list leaves out the to-do already brought up
+  const gift = N("ndg_gift", { text: "The gift", created_by: "assistant", related_ids: ["t4"], due_at: at("2026-11-28", "12:00") });
+  const w = nudgeWorld({ nudges: [gift] });
+  w.records.push({ id: "t6", kind: "todo", data: { title: "Post the letter", due: "2026-11-28", done: false }, deleted: 0 });
+  const p3 = c.planNudges(w, now, Object.assign({}, plain, { categories: { todos: true, events: false, dates: false, money: false, hisaab: false, loans: false, assistant: true } }));
+  const today = p3.create.find((x) => x.data.key === "todos-today:2026-11-28");
+  assert.deepStrictEqual(today && today.data.related_ids, ["t6"], JSON.stringify(p3.create.map((x) => x.data.key)));
+  assert.strictEqual(c.nudgeDuplicate({ text: "Rent!", related_ids: [] }, [mine], now), 'the same nudge came up already: "Rent!"');
+  assert.match(c.nudgeDuplicate({ text: "Something else", related_ids: ["t4"] }, [mine], now), /already a nudge about that/);
+  assert.strictEqual(c.nudgeDuplicate({ text: "Something else", related_ids: ["t4"] }, [mine], now, "ndg_mine"), "", "not a repeat of itself");
+  assert.strictEqual(c.nudgeDuplicate({ text: "Something else", related_ids: ["t4"] }, [N("x", { text: "y", status: "done", related_ids: ["t4"], due_at: now })], now), "", "a done one doesn't block");
+});
+
+ok("nudges: quiet hours move a new one, and a moved one counts on the day it comes up", () => {
+  const evening = Object.assign({}, plain, { quiet: { from: "19:00", to: "21:00" }, categories: { todos: false, events: true, dates: false, money: false, hisaab: false, loans: false, assistant: false } });
+  const p = c.planNudges(nudgeWorld(), at("2026-11-28", "07:00"), evening);
+  assert.strictEqual(p.create[0].data.key, "event:e1:2026-11-29");
+  assert.strictEqual(p.create[0].data.due_at, at("2026-11-28", "21:00"), "the evening before, after quiet hours");
+  // opened at 23:30: it comes up the next morning, and that day's cap counts it
+  const late = c.planNudges(nudgeWorld(), at("2026-11-28", "23:30"), plain);
+  assert.ok(late.create.length && late.create.every((x) => x.data.due_at === at("2026-11-29", "08:00")), JSON.stringify(late.create.map((x) => x.data.due_at)));
+  const full = [1, 2, 3, 4].map((i) => N(`ndg_x${i}`, { text: `x${i}`, due_at: at("2026-11-29", "12:00") }));
+  assert.strictEqual(c.planNudges(nudgeWorld({ nudges: full }), at("2026-11-28", "23:30"), plain).create.length, 0, "tomorrow is full already");
+});
+
+ok("nudges: one whose reason has gone ends by itself; not knowing isn't a reason", () => {
+  const now = at("2026-11-28", "09:00");
+  const w = nudgeWorld();
+  const rentKey = "todo-overdue:t1:2026-11-26";
+  const app = N(c.nudgeId(rentKey), { text: "rent", key: rentKey, related_ids: ["t1"], due_at: now });
+  const asst = N("ndg_a", { text: "fix it", created_by: "assistant", related_ids: ["t3"], due_at: now });
+  const unknown = N("ndg_u", { text: "?", created_by: "assistant", related_ids: ["not_synced_yet"], due_at: now });
+  const snoozed = N("ndg_s", { text: "later", created_by: "assistant", status: "snoozed", snooze_until: now + 1, related_ids: ["t5"], due_at: now });
+  w.nudges = [app, asst, unknown, snoozed];
+  w.records.find((r) => r.id === "t1").data.done = true; // rent paid
+  w.records = w.records.filter((r) => r.id !== "t3"); // the tap's to-do deleted
+  const byId = new Map(w.records.map((r) => [r.id, r]));
+  byId.set("t3", { id: "t3", kind: "todo", data: { title: "Fix the tap" }, deleted: 1 });
+  w.get = (id) => byId.get(id);
+  const plan = c.planNudges(w, now, plain);
+  assert.deepStrictEqual(plan.resolve.map((r) => r.id).sort(), [app.id, "ndg_a", "ndg_s"].sort());
+  const r0 = plan.resolve.find((r) => r.id === app.id).data;
+  assert.deepStrictEqual([r0.status, r0.resolved, r0.done_at, r0.snooze_until], ["done", true, now, null]);
+  assert.strictEqual(c.nudgeEndWord({ data: r0 }), "No longer needed");
+  assert.ok(!plan.create.some((x) => x.data.key === rentKey));
+  // switched off, it still tidies up
+  assert.strictEqual(c.planNudges(w, now, Object.assign({}, plain, { on: false })).resolve.length, 3);
+});
+
+ok("nudges: notifications at their time, out of quiet hours, never more than the cap a day, each once", () => {
+  const now = at("2026-11-28", "07:00");
+  const list = [
+    N("a", { text: "a", due_at: at("2026-11-28", "09:00"), priority: "low" }),
+    N("b", { text: "b", due_at: at("2026-11-28", "09:00"), priority: "high" }),
+    N("c", { text: "c", due_at: at("2026-11-28", "23:00") }), // quiet: tomorrow 08:00
+    N("d", { text: "d", due_at: at("2026-11-28", "06:30") }), // late, in quiet hours: at 08:00
+    N("e", { text: "e", due_at: at("2026-11-27", "12:00") }), // nineteen hours late: stays in the app
+    N("f", { text: "f", due_at: at("2026-11-28", "10:00"), status: "seen" }),
+    N("g", { text: "g", due_at: at("2026-11-28", "10:00"), status: "snoozed", snooze_until: at("2026-11-28", "15:00") }),
+    N("h", { text: "h", due_at: at("2026-11-28", "11:00"), category: "money" }),
+    N("i", { text: "your password: hunter2x", due_at: at("2026-11-28", "16:00"), created_by: "assistant" }),
+  ];
+  const off = Object.assign({}, plain, { categories: Object.assign({}, plain.categories, { money: false }) });
+  const alerts = c.nudgeAlerts(list, now, off, {});
+  assert.deepStrictEqual(
+    alerts.map((x) => [x.id, x.at]),
+    [
+      ["d", at("2026-11-28", "08:00")],
+      ["b", at("2026-11-28", "09:00")],
+      ["a", at("2026-11-28", "09:00")],
+      ["g", at("2026-11-28", "15:00")],
+      ["c", at("2026-11-29", "08:00")],
+    ],
+    "the day's four (late one first, then by time and priority), the night one tomorrow"
+  );
+  assert.strictEqual(alerts[0].late, true);
+  assert.strictEqual(alerts.find((x) => x.id === "g").key, `g:${at("2026-11-28", "15:00")}`, "a snooze rings again as its own alert");
+  // what this device already rang today counts: two rung, room for two more
+  const sent = { "z:1": at("2026-11-28", "06:00"), "y:2": at("2026-11-28", "06:30"), [`b:${at("2026-11-28", "09:00")}`]: at("2026-11-28", "09:00") };
+  const later = c.nudgeAlerts(list, at("2026-11-28", "06:45"), off, sent);
+  assert.deepStrictEqual(later.filter((x) => c.isoDate(new Date(x.at)) === "2026-11-28").map((x) => x.id), ["d", "b"], "two rung + two = the cap (b was scheduled, not rung yet)");
+  // rung already: not again
+  const after = c.nudgeAlerts(list, at("2026-11-28", "09:30"), off, { [`b:${at("2026-11-28", "09:00")}`]: at("2026-11-28", "09:00") });
+  assert.ok(!after.some((x) => x.id === "b"));
+  assert.strictEqual(c.nudgeAlerts(list, now, Object.assign({}, plain, { notify: false })).length, 0);
+  const big = c.nudgeAlerts(list, now, Object.assign({}, plain, { cap: 4, quiet: null }));
+  assert.ok(big.every((x) => !x.body.includes("hunter2x")) && (big.find((x) => x.id === "i") || { body: "[hidden]" }).body.includes("[hidden]"));
+  assert.deepStrictEqual(Object.keys(c.pruneSent({ old: now - 5 * 86400000, new: now - 3600000 }, now)), ["new"]);
+});
+
+ok("nudges: what's due now, what's later, what's past; done, snoozed and dismissed", () => {
+  const now = at("2026-11-28", "12:00");
+  const list = [
+    N("late", { text: "1", due_at: at("2026-11-28", "09:00"), priority: "low" }),
+    N("high", { text: "2", due_at: at("2026-11-28", "11:00"), priority: "high" }),
+    N("soon", { text: "3", due_at: at("2026-11-28", "18:00") }),
+    N("snz", { text: "4", due_at: at("2026-11-28", "08:00"), status: "snoozed", snooze_until: at("2026-11-28", "13:00") }),
+    N("gone", { text: "5", due_at: at("2026-11-27", "08:00"), status: "dismissed", done_at: 5 }),
+    N("off", { text: "6", due_at: at("2026-11-28", "08:00"), category: "money" }),
+  ];
+  const off = Object.assign({}, plain, { categories: Object.assign({}, plain.categories, { money: false }) });
+  assert.deepStrictEqual(c.dueNudges(list, now, off).map((n) => n.id), ["high", "late"]);
+  assert.deepStrictEqual(c.laterNudges(list, now, off).map((n) => n.id), ["snz", "soon"]);
+  assert.deepStrictEqual(c.pastNudges(list).map((n) => n.id), ["gone"]);
+  const t = c.snoozeTimes(now, plain);
+  assert.deepStrictEqual([t.hour, t.tomorrow], [at("2026-11-28", "13:00"), at("2026-11-29", "09:00")]);
+  assert.strictEqual(c.snoozeTimes(at("2026-11-28", "21:30"), plain).hour, at("2026-11-29", "08:00"), "an hour later is quiet hours: the morning");
+  const d = list[0].data;
+  assert.strictEqual(c.nudgeAfter(d, "seen", now).status, "seen");
+  assert.deepStrictEqual([c.nudgeAfter(d, "done", now).status, c.nudgeAfter(d, "done", now).done_at], ["done", now]);
+  assert.strictEqual(c.nudgeAfter(d, "dismiss", now).status, "dismissed");
+  assert.deepStrictEqual([c.nudgeAfter(d, { snooze: t.hour }, now).status, c.nudgeAfter(d, { snooze: t.hour }, now).snooze_until], ["snoozed", t.hour]);
+  assert.strictEqual(c.nudgeAfter(c.nudgeAfter(d, "done", now), "seen", now).status, "done", "seeing a done one changes nothing");
+});
+
+ok("nudges: no password, PIN or key in one", () => {
+  assert.strictEqual(c.hideSecrets("wifi password: hunter22"), "wifi password: [hidden]");
+  assert.strictEqual(c.hideSecrets("My PIN is 4471, call the bank"), "My PIN is [hidden], call the bank");
+  assert.strictEqual(c.hideSecrets("key ghp_abcdefghijklmnopqrstuvwxyz0123456789 here"), "key [hidden] here");
+  assert.strictEqual(c.hideSecrets("sk-abcdefghijklmnopqrstuvwxyz123456"), "[hidden]");
+  assert.strictEqual(c.hideSecrets("Call Sara about the passport"), "Call Sara about the passport", "ordinary words stay");
+  assert.strictEqual(c.hideSecrets("Log in with password hunter22"), "Log in with password [hidden]", "a password straight after its label");
+  assert.strictEqual(c.hideSecrets("Card PIN 4471 for the shop"), "Card PIN [hidden] for the shop");
+  assert.strictEqual(c.hideSecrets("Change the wifi password tomorrow"), "Change the wifi password tomorrow", "a plain word after the label stays");
+  assert.strictEqual(c.hideSecrets("Pin the photo to the board"), "Pin the photo to the board");
+});
+
+ok("nudges: the assistant can propose one, and it's cleaned like the rest", () => {
+  const recs = { t1: { kind: "todo", data: { title: "Pay rent" } } };
+  const ctx = { today: "2026-11-28", get: (id) => recs[id] || null };
+  const r = c.cleanChange({ op: "create", kind: "nudge", data: { text: "Rent, PIN is 1234", kind: "question", date: "2026-11-29", time: "18:00", related_ids: ["t1", "nope", "t1"], priority: "high" } }, ctx);
+  assert.ok(r.change, JSON.stringify(r));
+  assert.deepStrictEqual(r.change.data.related_ids, ["t1"]);
+  assert.strictEqual(r.change.data.text, "Rent, PIN is [hidden]");
+  const d = c.newRecordData(r.change, { currency: "PKR", today: "2026-11-28" });
+  assert.deepStrictEqual(
+    [d.status, d.created_by, d.category, d.kind, d.priority, d.due_at, d.date, d.time],
+    ["pending", "assistant", "assistant", "question", "high", at("2026-11-29", "18:00"), undefined, undefined]
+  );
+  assert.strictEqual(c.newRecordData({ op: "create", kind: "nudge", data: { text: "x" } }, { currency: "PKR", today: "2026-11-28" }).due_at, at("2026-11-28", "09:00"), "no day or time: this morning");
+  assert.match(c.cleanChange({ op: "create", kind: "nudge", data: { date: "2026-11-29" } }, ctx).error, /needs text/);
+  const moved = c.updatedRecordData("nudge", Object.assign({}, d, { status: "snoozed", snooze_until: 5 }), { date: "2026-11-30" });
+  assert.deepStrictEqual([moved.due_at, moved.status, moved.snooze_until], [at("2026-11-30", "18:00"), "pending", null]);
+  assert.strictEqual(c.updatedRecordData("nudge", d, { status: "done" }).status, "done");
+  assert.deepStrictEqual(c.describeRecord("nudge", d, { today: "2026-11-28" }), { title: "Rent, PIN is [hidden]", detail: "A question · Tomorrow at 6pm" });
+  assert.ok(c.describeKinds().includes("nudge: text* (text), kind (message|reminder|question)"), c.describeKinds().split("\n").find((l) => l.startsWith("nudge")));
+});
+
+ok("memories: the ones that matter to what's asked first, then the newest", () => {
+  const m = (id, text, extra, updated) => ({ id, data: Object.assign({ text }, extra || {}), updated_at: updated || 0 });
+  const list = [m("m1", "Likes tea", { topic: "food" }, 5), m("m2", "The plumber is Rashid", { topic: "home" }, 1), m("m3", "Sara's shoe size is 38", { related_ids: ["p1"] }, 2), m("m4", "Works from home on Fridays", { topic: "work", date: "2026-11-20" }, 3)];
+  assert.deepStrictEqual(c.rankMemories(list, { query: "when is the plumber coming?", today: "2027-01-01" }, 2).map((x) => x.id), ["m2", "m1"]);
+  assert.deepStrictEqual(c.rankMemories(list, { query: "a gift for my wife", related: ["p1"] }, 1).map((x) => x.id), ["m3"]);
+  assert.deepStrictEqual(c.rankMemories(list, { query: "what about work", today: "2026-11-28" }, 1).map((x) => x.id), ["m4"], "its topic named");
+  assert.deepStrictEqual(c.rankMemories(list, { today: "2027-01-01" }, 4).map((x) => x.id), ["m1", "m4", "m3", "m2"], "nothing asked: newest first");
+  assert.deepStrictEqual(c.rankMemories(list, { today: "2026-11-28" }, 1).map((x) => x.id), ["m4"], "said lately counts a little");
+});
 console.log(`core: ${n} checks passed`);

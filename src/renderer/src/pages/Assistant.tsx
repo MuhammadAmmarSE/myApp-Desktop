@@ -8,6 +8,8 @@ import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { Archive, ArchiveRestore, ArrowDown, Bot, CircleAlert, CircleCheck, CircleStop, MessageSquarePlus, MoreHorizontal, Pencil, Search, Server, Settings2, Star, Trash2, Volume2, VolumeX } from "lucide-react";
 import { buildTimeline, spokenAnswer, type OpEvent } from "@myapp/core";
+import { useNudges } from "@/lib/nudges";
+import { NudgeRow } from "@/components/NudgeCard";
 import { decide, decisionsOf, useProposals } from "@/lib/proposals";
 import { Button, Card, Chip, confirmDialog, Empty, IconButton, Input, Menu, Segmented, Skeleton, SkeletonRows, Tag, toast, useContextMenu, Working } from "@/components/ui";
 import { Orb } from "@/components/orb/Orb";
@@ -275,6 +277,9 @@ function Home() {
   };
   const conns = op.status?.connections;
   const recent = [...op.favourites, ...op.runs.filter((r) => !r.starred)].slice(0, 6);
+  // reminders the assistant set that haven't come up yet or are waiting now
+  const nudges = useNudges();
+  const mine = nudges.due.concat(nudges.later).filter((n) => n.data.created_by === "assistant");
   return (
     <div className="h-full overflow-y-auto px-8 pb-12 pt-10">
       <div className="mx-auto max-w-[780px]">
@@ -327,8 +332,24 @@ function Home() {
           </motion.section>
         )}
 
+        {mine.length > 0 && (
+          <motion.section {...rise(7)} className="mt-8" data-testid="assistant-nudges">
+            <div className="mb-2 flex items-center">
+              <div className="flex-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-text3">Reminders it set · {mine.length}</div>
+              <button type="button" onClick={() => navigate("/nudges")} className="text-[12.5px] font-medium text-accent-text hover:underline">
+                All nudges
+              </button>
+            </div>
+            <div className="rounded-[12px] px-3.5 glass hairline">
+              {mine.slice(0, 5).map((n) => (
+                <NudgeRow key={n.id} nudge={n} today={nudges.today} />
+              ))}
+            </div>
+          </motion.section>
+        )}
+
         {recent.length > 0 && (
-          <motion.section {...rise(7)} className="mt-8">
+          <motion.section {...rise(8)} className="mt-8">
             <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-text3">Recent</div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {recent.map((r) => (

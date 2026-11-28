@@ -19,6 +19,9 @@ type State = {
   meta: Record<string, string>;
   load: () => Promise<void>;
   create: <K extends Kind>(kind: K, data: KindData[K]) => Rec<K>;
+  // a record with an id worked out the same way on every device (a nudge), made only if it isn't
+  // here; stamped no later than `at`, so a change made to it elsewhere wins over this copy
+  createOnce: <K extends Kind>(id: string, kind: K, data: KindData[K], at: number) => Rec<K> | null;
   update: <K extends Kind>(id: string, change: Partial<KindData[K]> | ((d: KindData[K]) => KindData[K])) => void;
   remove: (id: string) => void;
   restore: (rec: Rec) => void;
@@ -69,6 +72,14 @@ export const useRecords = create<State>((set, get) => {
     create: (kind, data) => {
       const now = Date.now();
       const rec = { id: newId(), kind, data, created_at: now, updated_at: now, deleted: 0, dirty: 1 } as Stored;
+      save([rec]);
+      changed();
+      return rec as unknown as Rec<typeof kind>;
+    },
+    createOnce: (id, kind, data, at) => {
+      if (get().byId[id]) return null;
+      const stamp = Math.min(at, Date.now());
+      const rec = { id, kind, data, created_at: stamp, updated_at: stamp, deleted: 0, dirty: 1 } as Stored;
       save([rec]);
       changed();
       return rec as unknown as Rec<typeof kind>;

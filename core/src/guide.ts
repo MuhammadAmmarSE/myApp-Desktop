@@ -276,6 +276,22 @@ export const FEATURES: Feature[] = [
     phone: ["/memory"],
   },
   {
+    id: "nudges",
+    name: "Nudges (the app and the assistant bringing things up)",
+    status: "built",
+    what: "Something brought up at the right moment: a to-do past its day, what's on for today, the evening before a plan, a birthday a few days off, a hisaab open a while, a loan past its day, spending running ahead of last month, or a reminder the assistant set for you. One card on Today, all of them in the assistant, and a notification when one is due (never in quiet hours, at most four a day).",
+    where: "Phone: the card on Today, the top of the assistant, and Settings → Assistant → Nudges (with the history). Computer: the card on Today, the assistant's side panel, and Settings → Assistant.",
+    how: [
+      "On a nudge: Done, Snooze 1h, Snooze till tomorrow, Dismiss, or Open the record it's about.",
+      "The app checks when you open it: it never brings up the same thing twice, and a nudge whose reason has gone (the to-do is done, the loan paid) ends by itself.",
+      "Settings → Assistant: which kinds of nudge you want, quiet hours, how many a day (1 to 4), notifications, and whether the assistant may set its own reminders without asking. Clear the history there.",
+      'Ask the assistant: "remind me to ask Sara about the tickets on Friday evening" and it proposes a nudge (saved by itself when you let it).',
+    ],
+    kinds: ["nudge"],
+    phone: ["/nudges"],
+    desktop: ["/nudges"],
+  },
+  {
     id: "settings",
     name: "Settings",
     status: "built",

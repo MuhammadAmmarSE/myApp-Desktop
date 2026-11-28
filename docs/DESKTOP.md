@@ -54,6 +54,19 @@ main process (Node)                       screens (Chromium, sandboxed)
   for the assistant's home, `"chat:<id>"` for each conversation), with its photos and files. The
   words are also kept in the records' meta (debounced), so they survive a restart; photos and
   files only while Redline is open. Sending clears that chat's draft.
+- **Nudges** (`lib/nudges.ts`, `components/NudgeCard.tsx`, `pages/Nudges.tsx`,
+  `components/NudgeSettings.tsx`, core's `nudges.ts`): the same as on the phone (myApp
+  docs/ARCHITECTURE.md → Nudges). The app's own check (core's `planNudges`) runs when Redline
+  starts, when the window comes to the front, every ten minutes and a moment after records change;
+  new ones go through `createOnce` with core's id (the same on every device), and the ones whose
+  reason has gone are marked done. Today shows the most pressing; the assistant's page lists the
+  reminders it set; the Nudges page has the rest, what's coming and the history. What rings
+  (`lib/alerts.ts` → `nudgeAlertList`, core's `nudgeAlerts`) is handed to the main process with
+  the other reminders: at its time or when quiet hours end, at most the day's limit, each once
+  (`nudge_sent` in the records' meta). Settings → Nudges is per computer. The assistant's own
+  reminders save themselves from an `auto` card when that setting is on (`Proposal.tsx`, checked
+  again here, a repeat skipped). Unit-tested in `test/unit/nudges.test.ts`, end to end in the
+  "nudges" scenario.
 - **The small orb** (`components/orb/Orb.tsx`): drawn beside "Working on it" at about 30 px, its
   ring, streak and moons keep a width you can see (at least a pixel or so on screen), and the
   streak is the planet's colour with a light core, so it shows on a light page too.

@@ -30,6 +30,7 @@ export const KINDS = [
   "fund",
   "pot",
   "owed",
+  "nudge",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (k: unknown): k is Kind => typeof k === "string" && (KINDS as readonly string[]).includes(k);
@@ -319,9 +320,13 @@ export interface WishData {
 // Something the assistant knows about you that isn't a record of its own: a preference, a routine,
 // a fact worth remembering ("I work from home on Fridays", "Sara doesn't eat beef"). You see, change
 // and delete them in the app; the assistant proposes new ones and you save them, like any change.
+// These are also the context the assistant brings to each new conversation: the ones most relevant
+// to what you ask first (nudges.ts rankMemories), each with what it's about and when it was true.
 export interface MemoryData {
   text: string;
   topic?: string; // a word or two to group by: "work", "family", "food"
+  related_ids?: string[]; // records it's about (a person, a project)
+  date?: string | null; // YYYY-MM-DD: when it was said or became true
   [k: string]: unknown;
 }
 
@@ -423,6 +428,35 @@ export interface OwedData {
   [k: string]: unknown;
 }
 
+// A nudge: something the app or the assistant brings up at the right moment ("Pay rent was due
+// yesterday", "Sara's birthday is on Saturday: anything to get?"). It shows in the assistant and
+// as one card on Today, and can ring as a notification at due_at. The app's own daily check makes
+// most of them (created_by app, with a key so the same one is never made twice); the assistant
+// can propose one like any other change. Done, snoozed or dismissed, it stays until you clear the
+// history. Never holds a password or a key (hideSecrets).
+export const NUDGE_KINDS = ["message", "reminder", "question"] as const;
+export type NudgeKind = (typeof NUDGE_KINDS)[number];
+export const NUDGE_STATUSES = ["pending", "seen", "done", "snoozed", "dismissed"] as const;
+export type NudgeStatus = (typeof NUDGE_STATUSES)[number];
+// what a nudge is about, for the per-category switches
+export const NUDGE_CATEGORIES = ["todos", "events", "dates", "money", "hisaab", "loans", "assistant"] as const;
+export type NudgeCategory = (typeof NUDGE_CATEGORIES)[number];
+export interface NudgeData {
+  text: string;
+  kind: NudgeKind;
+  due_at: number; // epoch ms: when it should come up
+  priority: "high" | "normal" | "low";
+  status: NudgeStatus;
+  snooze_until?: number | null; // snoozed: when it comes back
+  reason?: string; // why it came up, in a line
+  related_ids?: string[]; // the records it's about ("Open the record")
+  created_by: "app" | "assistant";
+  category?: NudgeCategory;
+  key?: string; // the app's check: what made it ("todo-overdue:<id>:<due>"), so it's made once
+  done_at?: number | null; // when it was done or dismissed
+  [k: string]: unknown;
+}
+
 export interface KindData {
   todo: TodoData;
   item: ItemData;
@@ -450,6 +484,7 @@ export interface KindData {
   fund: FundData;
   pot: PotData;
   owed: OwedData;
+  nudge: NudgeData;
 }
 
 export interface Rec<K extends Kind = Kind> {

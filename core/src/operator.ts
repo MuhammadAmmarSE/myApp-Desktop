@@ -43,6 +43,9 @@ export interface ProposalItem {
   dropped: { index: number; reason: string }[];
   // what you did with each change, by its place in the list
   decided: Record<number, { saved: boolean; recordId?: string }>;
+  // only new nudges, and the owner lets the assistant save its own reminders: the app saves them
+  // without asking (after checking that setting again itself)
+  auto?: boolean;
 }
 export interface Step {
   kind: "step";
@@ -203,7 +206,7 @@ export function buildTimeline(events: OpEvent[], conversationId: number): OpItem
         break;
       case "proposal": {
         const s = steps.get(d.call_id);
-        if (s) s.proposal = { id: String(d.call_id), changes: Array.isArray(d.changes) ? d.changes : [], dropped: Array.isArray(d.dropped) ? d.dropped : [], decided: {} };
+        if (s) s.proposal = { id: String(d.call_id), changes: Array.isArray(d.changes) ? d.changes : [], dropped: Array.isArray(d.dropped) ? d.dropped : [], decided: {}, auto: d.auto === true || undefined };
         break;
       }
       case "proposal_decided": {
