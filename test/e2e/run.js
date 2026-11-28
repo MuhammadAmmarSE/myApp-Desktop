@@ -1066,6 +1066,139 @@ async function scenario(name, fn, always = false) {
     fs.rmSync(out, { force: true });
   });
 
+  await scenario("assistant: an unsent message and its photo wait in the box while you're elsewhere; the photo opens large, is cropped, turned and drawn on, and goes edited", async () => {
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.getByRole("button", { name: /Server/ }).first().waitFor({ timeout: 20000 });
+    await win.keyboard.press("n");
+    const composer = win.getByTestId("composer");
+    await composer.waitFor();
+    await composer.fill("Half a thought about the trip");
+    // a 400 x 300 picture dropped on the box
+    await win.evaluate(async () => {
+      const c = document.createElement("canvas");
+      c.width = 400;
+      c.height = 300;
+      const ctx = c.getContext("2d");
+      const g = ctx.createLinearGradient(0, 0, 400, 300);
+      g.addColorStop(0, "#3355ff");
+      g.addColorStop(1, "#ff8833");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 400, 300);
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], "trip.png", { type: "image/png" }));
+      const box = document.querySelector('[data-testid="composer-box"]');
+      box.dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      box.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    });
+    await win.getByTestId("attached-photo").waitFor();
+    // elsewhere and back: the words and the photo are still there
+    await go("/todos");
+    await win.getByTestId("composer").waitFor({ state: "detached" });
+    await go("/assistant");
+    await composer.waitFor();
+    if ((await composer.inputValue()) !== "Half a thought about the trip") throw new Error(`the words weren't kept: "${await composer.inputValue()}"`);
+    if ((await win.getByTestId("attached-photo").count()) !== 1) throw new Error("the photo wasn't kept");
+    // open it large and edit it
+    await win.getByTestId("attached-photo").click();
+    const editor = win.getByTestId("photo-editor");
+    await editor.waitFor();
+    const large = editor.getByTestId("photo-large");
+    const size = () => large.evaluate((i) => ({ w: i.naturalWidth, h: i.naturalHeight }));
+    await until("the photo loaded", async () => (await size()).w === 400);
+    await win.screenshot({ path: path.join(OUT, "photo-open.png") }).catch(() => {});
+    // crop: drag over the middle, Crop
+    await editor.getByRole("button", { name: "Crop" }).click();
+    const b = await large.boundingBox();
+    await win.mouse.move(b.x + b.width * 0.1, b.y + b.height * 0.1);
+    await win.mouse.down();
+    await win.mouse.move(b.x + b.width * 0.35, b.y + b.height * 0.4, { steps: 4 });
+    await win.mouse.move(b.x + b.width * 0.6, b.y + b.height * 0.7, { steps: 4 });
+    await win.mouse.up();
+    await editor.getByTestId("crop-box").waitFor();
+    await win.screenshot({ path: path.join(OUT, "photo-crop.png") }).catch(() => {});
+    await editor.getByTestId("crop-apply").click();
+    const cropped = await until("cropped", async () => {
+      const s = await size();
+      return s.w < 400 && s.w > 150 && s.h < 300 && s.h > 150 && s;
+    });
+    // turned right: width and height swap
+    await editor.getByRole("button", { name: "Turn right" }).click();
+    await until("turned", async () => {
+      const s = await size();
+      return s.w === cropped.h && s.h === cropped.w;
+    });
+    // drawn on
+    await editor.getByRole("button", { name: "Draw" }).click();
+    await editor.getByTestId("photo-pens").waitFor();
+    const d = await large.boundingBox();
+    await win.mouse.move(d.x + d.width * 0.2, d.y + d.height * 0.5);
+    await win.mouse.down();
+    await win.mouse.move(d.x + d.width * 0.5, d.y + d.height * 0.3, { steps: 6 });
+    await win.mouse.move(d.x + d.width * 0.8, d.y + d.height * 0.6, { steps: 6 });
+    await win.mouse.up();
+    await win.screenshot({ path: path.join(OUT, "photo-draw.png") }).catch(() => {});
+    // undo takes the line away, a second line stays
+    await win.keyboard.press("Control+z");
+    await win.mouse.move(d.x + d.width * 0.3, d.y + d.height * 0.7);
+    await win.mouse.down();
+    await win.mouse.move(d.x + d.width * 0.7, d.y + d.height * 0.7, { steps: 6 });
+    await win.mouse.up();
+    await editor.getByRole("button", { name: "Done drawing" }).click();
+    await editor.getByTestId("photo-save").click();
+    await editor.waitFor({ state: "detached" });
+    // the photo in the box is the edited one: taller than wide now
+    const thumb = await win.getByTestId("attached-photo").locator("img").evaluate((i) => ({ w: i.naturalWidth, h: i.naturalHeight }));
+    if (!(thumb.h > thumb.w)) throw new Error(`the edited photo isn't in the box: ${JSON.stringify(thumb)}`);
+    // sent: the chat opens, its own box is empty, and the new-chat box starts empty next time
+    await win.getByTestId("send").click();
+    await win.locator("[data-user-message]").getByText("Half a thought about the trip").waitFor({ timeout: 30000 });
+    if ((await win.getByTestId("composer").inputValue()) !== "") throw new Error("the chat's box isn't empty");
+    // a reply not sent yet waits in this chat's box
+    await win.getByTestId("composer").fill("And book the hotel");
+    const chat = await win.evaluate(() => location.hash);
+    await go("/money");
+    await go(chat.replace(/^#/, ""));
+    await win.getByTestId("composer").waitFor();
+    await until("the reply kept", async () => (await win.getByTestId("composer").inputValue()) === "And book the hotel");
+    // the photo that went opens large too, to look at (no editing tools)
+    await win.locator("[data-user-message]").getByRole("button", { name: "Open the photo" }).first().click();
+    await editor.waitFor();
+    if (await editor.getByTestId("photo-tools").count()) throw new Error("a sent photo shouldn't have editing tools");
+    await win.screenshot({ path: path.join(OUT, "photo-sent.png") }).catch(() => {});
+    await win.keyboard.press("Escape");
+    await editor.waitFor({ state: "detached" });
+    await go("/assistant");
+    await composer.waitFor();
+    if ((await composer.inputValue()) !== "") throw new Error(`the new-chat box kept what was sent: "${await composer.inputValue()}"`);
+  });
+
+  await scenario("assistant: a reply with a very long link stays inside its bubble, and so does a long message", async () => {
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    await win.getByRole("button", { name: /Server/ }).first().waitFor({ timeout: 20000 });
+    const composer = win.getByTestId("composer");
+    await composer.waitFor();
+    await composer.fill(`Give me a long link ${"y".repeat(200)}`);
+    await win.getByTestId("send").click();
+    const reply = win.locator("[data-reply]").last();
+    await reply.getByText("Then I'll finish it.", { exact: false }).waitFor({ timeout: 30000 });
+    await win.waitForTimeout(500);
+    const fits = await win.evaluate(() => {
+      const bad = [];
+      const timeline = document.querySelector('[data-testid="timeline"]');
+      const edge = timeline.getBoundingClientRect().right + 1;
+      for (const el of document.querySelectorAll("[data-reply] *, [data-user-message] *")) {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.right > edge) bad.push(`${el.tagName}.${String(el.className).slice(0, 40)} ends at ${Math.round(r.right)} > ${Math.round(edge)}`);
+      }
+      return bad.slice(0, 5);
+    });
+    await win.screenshot({ path: path.join(OUT, "long-link.png") }).catch(() => {});
+    if (fits.length) throw new Error(`text runs out of the chat:\n${fits.join("\n")}`);
+  });
+
   await scenario("talking: it hears you, stops when you do, sends what you said, reads the answer aloud and listens for your reply", async () => {
     const log = path.join(workdir, "voice.log");
     if (fs.existsSync(log)) fs.unlinkSync(log);

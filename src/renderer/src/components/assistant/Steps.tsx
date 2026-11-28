@@ -60,13 +60,13 @@ function ClaudeExchange({ session, question, answer }: { session: string; questi
     <div className="flex flex-col gap-2" data-claude-exchange>
       <div className="flex flex-col gap-1 rounded-[10px] bg-surface p-2.5 hairline">
         <span className="text-[11.5px] text-text3">{`Claude${session ? ` · ${session}` : ""} asks`}</span>
-        <p className="selectable whitespace-pre-wrap text-[13.5px] text-text" data-claude-question>
+        <p className="selectable whitespace-pre-wrap [overflow-wrap:anywhere] text-[13.5px] text-text" data-claude-question>
           {question}
         </p>
       </div>
       <div className="flex flex-col gap-1 rounded-[10px] bg-surface p-2.5 shadow-[inset_0_0_0_1px_var(--c-accent)]">
         <span className="text-[11.5px] text-accent-text">Your answer, if you approve</span>
-        <p className="selectable whitespace-pre-wrap text-[13.5px] font-semibold text-text" data-claude-answer>
+        <p className="selectable whitespace-pre-wrap [overflow-wrap:anywhere] text-[13.5px] font-semibold text-text" data-claude-answer>
           {answer}
         </p>
       </div>
@@ -236,7 +236,7 @@ export function ClaudeCard({ s }: { s: ClaudeSession }) {
           </div>
         ),
       )}
-      {s.result && <p className="selectable whitespace-pre-wrap text-[13px]">{s.result}</p>}
+      {s.result && <p className="selectable whitespace-pre-wrap [overflow-wrap:anywhere] text-[13px]">{s.result}</p>}
       {meta && <div className="text-[11.5px] text-text3">{meta}</div>}
     </div>
   );

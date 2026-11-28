@@ -25,6 +25,7 @@ import { navigate, useQuery } from "@/lib/router";
 import { usePageKeys } from "@/lib/keys";
 import { hush, linesDone, speak, speakLine, useSpeaking } from "@/lib/speech";
 import type { Photo } from "@/lib/images";
+import { PhotoEditor } from "@/components/assistant/PhotoEditor";
 import type { Attachment } from "@/lib/attachments";
 import { ago } from "@/lib/format";
 import { rise } from "@/theme/motion";
@@ -287,7 +288,7 @@ function Home() {
           It knows what you keep here. Changes wait for your click, risky steps for your fingerprint or password.
         </motion.p>
         <motion.div {...rise(3)}>
-          <Composer big placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus={!listen} autoListen={listen} onVoice={startByVoice} />
+          <Composer big draftKey="new" placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus={!listen} autoListen={listen} onVoice={startByVoice} />
         </motion.div>
         <motion.div {...rise(4)} className="mt-3 flex flex-wrap justify-center gap-1.5">
           {IDEAS.map((i) => (
@@ -669,7 +670,7 @@ function Conversation({ runId }: { runId: number }) {
                     {it.files?.length > 0 && <SentFiles runId={runId} files={it.files} />}
                     {(it.text || it.whileWorking) && (
                       <div className="selectable rounded-[16px] rounded-br-[6px] accent-grad px-4 py-2.5 text-[14px] text-on-accent shadow-[var(--shadow-glow)]">
-                        {it.text && <div className="whitespace-pre-wrap">{it.text}</div>}
+                        {it.text && <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{it.text}</div>}
                         {it.whileWorking && <div className="mt-1 text-[11.5px] opacity-75">Sent while it was working</div>}
                       </div>
                     )}
@@ -718,7 +719,7 @@ function Conversation({ runId }: { runId: number }) {
               </Button>
             </div>
           )}
-          <Composer placeholder={run && live(run.status) ? "Add something while it works…" : "Reply, or ask for more…"} onSend={send} busy={sending} autoFocus listenNow={listenNow} onVoice={sendRecording} />
+          <Composer key={runId} draftKey={`chat:${runId}`} placeholder={run && live(run.status) ? "Add something while it works…" : "Reply, or ask for more…"} onSend={send} busy={sending} autoFocus listenNow={listenNow} onVoice={sendRecording} />
         </div>
       </div>
     </div>
@@ -745,13 +746,7 @@ function SentPhotos({ runId, ids }: { runId: number; ids: number[] }) {
           <SentPhoto key={id} runId={runId} id={id} big={ids.length === 1} onOpen={setOpen} />
         ))}
       </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(null)} className="fixed inset-0 z-[130] grid place-items-center bg-black/70 p-10 backdrop-blur-sm">
-            <motion.img initial={{ scale: 0.96 }} animate={{ scale: 1 }} src={open} alt="The photo you sent" className="max-h-full max-w-full rounded-[14px] shadow-[var(--shadow-pop)]" />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <AnimatePresence>{open && <PhotoEditor src={open} name="The photo you sent" onClose={() => setOpen(null)} />}</AnimatePresence>
     </>
   );
 }

@@ -23,7 +23,12 @@ export function Orb({ size = 220, state = "idle", className }: { size?: number; 
   const core = err ? "var(--c-danger)" : "var(--orb-core)";
   const rim = err ? "var(--c-danger)" : "var(--orb-rim)";
   const light = err ? "#ffd6d6" : "var(--orb-light)";
-  const dots = Array.from({ length: 14 }, (_, i) => i);
+  // drawn small (beside "Working on it"), a 1-unit line would be a fifth of a pixel and vanish:
+  // the ring, its streak and the moons keep a width you can see, and there are fewer moons
+  const px = 200 / size; // drawing units in one screen pixel
+  const small = size < 90;
+  const line = (units: number, minPx: number) => Math.max(units, minPx * px);
+  const dots = Array.from({ length: small ? 6 : 14 }, (_, i) => i);
   const windowActive = useWindowActive();
   const live = !reduced && windowActive;
   // breathing and drifting: only while it listens or thinks
@@ -96,7 +101,7 @@ export function Orb({ size = 220, state = "idle", className }: { size?: number; 
 
         {/* back half of the ring, behind the planet */}
         <g transform="rotate(-18 100 100)">
-          <ellipse cx="100" cy="100" rx="92" ry="24" fill="none" stroke={rim} strokeOpacity="0.22" strokeWidth="1.2" />
+          <ellipse cx="100" cy="100" rx="92" ry="24" fill="none" stroke={rim} strokeOpacity={small ? 0.4 : 0.22} strokeWidth={line(1.2, 1)} />
         </g>
 
         {/* the planet */}
@@ -116,26 +121,34 @@ export function Orb({ size = 220, state = "idle", className }: { size?: number; 
 
         {/* front half of the ring, with its moons going round */}
         <g transform="rotate(-18 100 100)">
-          <path d="M 8 100 A 92 24 0 0 0 192 100" fill="none" stroke={rim} strokeOpacity="0.55" strokeWidth="1.4" />
+          <path d="M 8 100 A 92 24 0 0 0 192 100" fill="none" stroke={rim} strokeOpacity={small ? 0.8 : 0.55} strokeWidth={line(1.4, 1.2)} />
           {dots.map((i) => (
-            <Moon key={i} i={i} n={dots.length} angle={angle} color={i % 4 === 0 ? light : "var(--orb-particles)"} />
+            <Moon key={i} i={i} n={dots.length} angle={angle} color={i % 4 === 0 && !small ? light : "var(--orb-particles)"} minR={small ? 1 * px : 0} />
           ))}
-          {state === "thinking" && live && (
-            <motion.ellipse
-              cx="100"
-              cy="100"
-              rx="92"
-              ry="24"
-              fill="none"
-              stroke={light}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeDasharray="60 520"
-              initial={{ strokeDashoffset: 0, opacity: 0 }}
-              animate={{ strokeDashoffset: -580, opacity: 0.9 }}
-              transition={{ strokeDashoffset: { duration: 1.1, repeat: Infinity, ease: "linear" }, opacity: { duration: 0.3 } }}
-            />
-          )}
+          {/* the streak going round while it thinks: the planet's own colour with a light core, so
+              it shows on a light page as well as a dark one */}
+          {state === "thinking" &&
+            live &&
+            [
+              { stroke: core, width: line(3.2, 2.4), opacity: 0.95 },
+              { stroke: light, width: line(1.4, 1), opacity: 0.9 },
+            ].map((s, i) => (
+              <motion.ellipse
+                key={i}
+                cx="100"
+                cy="100"
+                rx="92"
+                ry="24"
+                fill="none"
+                stroke={s.stroke}
+                strokeWidth={s.width}
+                strokeLinecap="round"
+                strokeDasharray="70 510"
+                initial={{ strokeDashoffset: 0, opacity: 0 }}
+                animate={{ strokeDashoffset: -580, opacity: s.opacity }}
+                transition={{ strokeDashoffset: { duration: 1.1, repeat: Infinity, ease: "linear" }, opacity: { duration: 0.3 } }}
+              />
+            ))}
         </g>
 
         {/* the tick when something was saved */}
@@ -163,9 +176,9 @@ export function Orb({ size = 220, state = "idle", className }: { size?: number; 
 }
 
 // One moon on the ring. Moons in front of the planet are bright; behind it they fade.
-function Moon({ i, n, angle, color }: { i: number; n: number; angle: MotionValue<number>; color: string }) {
+function Moon({ i, n, angle, color, minR = 0 }: { i: number; n: number; angle: MotionValue<number>; color: string; minR?: number }) {
   const start = (i / n) * Math.PI * 2;
-  const r = 1.4 + (i % 3) * 0.55;
+  const r = Math.max(minR, 1.4 + (i % 3) * 0.55);
   const cx = useTransform(angle, (a) => 100 + Math.cos(a + start) * 92);
   const cy = useTransform(angle, (a) => 100 + Math.sin(a + start) * 24);
   const opacity = useTransform(angle, (a) => (Math.sin(a + start) > 0 ? 0.95 : 0.22));

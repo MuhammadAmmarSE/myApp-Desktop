@@ -45,6 +45,18 @@ main process (Node)                       screens (Chromium, sandboxed)
   `files: [{ name, data }]`; the server saves and reads them (myapp-backend docs/OPERATOR.md →
   Files). A sent one's Save fetches it from `/runs/:id/files/:fileId` and the main process writes
   it where you choose (`bridge.files.saveFile`, a save dialog; the window never touches the disk).
+- **Photos, large and edited** (`components/assistant/PhotoEditor.tsx`, `lib/photoEdit.ts`): a
+  photo in the box opens to edit (crop with a box you drag, move and pull by its corners; turn
+  left or right; draw in the theme's colours; Undo goes back a step); a sent one opens to look
+  at. The box's arithmetic is pure and unit-tested; each step is drawn on a canvas in the window,
+  and Save shrinks the result like any photo.
+- **Drafts** (`store/drafts.ts`): what's written in a chat's box and not sent, per chat (`"new"`
+  for the assistant's home, `"chat:<id>"` for each conversation), with its photos and files. The
+  words are also kept in the records' meta (debounced), so they survive a restart; photos and
+  files only while Redline is open. Sending clears that chat's draft.
+- **The small orb** (`components/orb/Orb.tsx`): drawn beside "Working on it" at about 30 px, its
+  ring, streak and moons keep a width you can see (at least a pixel or so on screen), and the
+  streak is the planet's colour with a light core, so it shows on a light page too.
 - **Claude sessions** (`components/assistant/ClaudeSessions.tsx`, Settings → Assistant): your
   Claude Code sessions on claude.ai, added once (a claude.ai/code link, checked with core's
   `parseClaudeSession`, and a name), renamed and forgotten (with Undo) through
