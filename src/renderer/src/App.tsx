@@ -14,6 +14,7 @@ import { bridge } from "@/lib/bridge";
 import { match, navigate, useLocation } from "@/lib/router";
 import { useGlobalKeys } from "@/lib/keys";
 import { startAlerts } from "@/lib/alerts";
+import { startNudges } from "@/lib/nudges";
 import { startActivity } from "@/lib/activity";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";

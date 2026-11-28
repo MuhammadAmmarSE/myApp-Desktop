@@ -41,6 +41,8 @@ import { workHeadsUp } from "@/lib/work";
 import { useFunds } from "@/lib/funds";
 import { useOwed } from "@/lib/owed";
 import { isInbox } from "@/lib/inbox";
+import { useNudges } from "@/lib/nudges";
+import { NudgeCard } from "@/components/NudgeCard";
 import { useNow } from "@/lib/clock";
 import { navigate } from "@/lib/router";
 import { bridge, modKey } from "@/lib/bridge";
@@ -52,6 +54,7 @@ const TONE: Record<Heads["tone"], string> = { danger: "var(--c-danger)", warn: "
 const UP_ICON: Record<string, LucideIcon> = { date: Cake, event: CalendarDays, reminder: BellRing };
 
 export default function Today() {
+  const nudges = useNudges();
   const nowMs = useNow(30000);
   const now = new Date(nowMs);
   const today = isoDate(now);
@@ -203,6 +206,13 @@ export default function Today() {
           </div>
         </div>
       </motion.div>
+
+      {/* the most pressing nudge (the rest are on the Nudges page) */}
+      {nudges.due.length > 0 && (
+        <motion.div {...rise(1)} className="mb-5">
+          <NudgeCard nudge={nudges.due[0]} more={nudges.due.length - 1} onMore={() => navigate("/nudges")} />
+        </motion.div>
+      )}
 
       {empty ? (
         <Card>

@@ -19,12 +19,17 @@ Read [README.md](README.md) for what it does and [docs/DESKTOP.md](docs/DESKTOP.
 5. **Records are one shape.** New fields go in `data`, typed in `core/src/kinds.ts`. `core/` is a
    copy: edit `packages/core` in myApp and run `npm run sync-core`.
 6. **AI output is a proposal.** Clean it (core's `cleanActions`), show it, save only what the
-   person keeps.
+   person keeps. The one exception is the person's own choice: with Settings → Nudges → "Save by
+   itself", a card of nothing but new reminders (nudges) saves itself, shown and undoable.
 7. **Approvals need the person.** Never add a way to approve an assistant step without
    `confirmIdentity()` (Touch ID or the account password, checked by the server), and never
    decide a step on the owner's behalf.
 8. **Private:** no real names, numbers or addresses in code, seeds or tests (sample text uses
    generic ones). Never commit `.env`, keys, certificates.
+9. **Nudges** are made only by core's `planNudges` (`lib/nudges.ts`) or from a card; new ones go
+   through `createOnce` with core's id so two devices never double one. Never a password or key in
+   one (`hideSecrets`); what rings keeps to quiet hours and the day's limit (`nudgeAlerts`). Sync
+   and sign-in were not changed for them; ask before changing either.
 
 ## The screens
 

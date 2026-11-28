@@ -1170,6 +1170,10 @@ ok("nudges: no password, PIN or key in one", () => {
   assert.strictEqual(c.hideSecrets("key ghp_abcdefghijklmnopqrstuvwxyz0123456789 here"), "key [hidden] here");
   assert.strictEqual(c.hideSecrets("sk-abcdefghijklmnopqrstuvwxyz123456"), "[hidden]");
   assert.strictEqual(c.hideSecrets("Call Sara about the passport"), "Call Sara about the passport", "ordinary words stay");
+  assert.strictEqual(c.hideSecrets("Log in with password hunter22"), "Log in with password [hidden]", "a password straight after its label");
+  assert.strictEqual(c.hideSecrets("Card PIN 4471 for the shop"), "Card PIN [hidden] for the shop");
+  assert.strictEqual(c.hideSecrets("Change the wifi password tomorrow"), "Change the wifi password tomorrow", "a plain word after the label stays");
+  assert.strictEqual(c.hideSecrets("Pin the photo to the board"), "Pin the photo to the board");
 });
 
 ok("nudges: the assistant can propose one, and it's cleaned like the rest", () => {

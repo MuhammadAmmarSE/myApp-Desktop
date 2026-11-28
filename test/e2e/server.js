@@ -79,6 +79,16 @@ function operatorTurn(body) {
     const url = `https://accounts.example.com/o/oauth2/auth?response_type=code&client_id=${"0123456789abcdef".repeat(14)}&redirect_uri=https%3A%2F%2Fsdk.example.com%2Fauthcode.html&scope=${"openid+email+profile+".repeat(10)}`;
     return { content: `Open this, approve, and send me the code it shows: ${url} Then I'll finish it.\n\nOr [the same link](${url}), and a word that never breaks: ${"x".repeat(240)}` };
   }
+  // "remind me to …": a nudge for a minute ago, so it's waiting on Today straight away
+  if (/^remind me to /i.test(text)) {
+    if (steps === 0) {
+      const t = new Date(Date.now() - 60000);
+      const pad = (x) => String(x).padStart(2, "0");
+      const what = text.replace(/^remind me to /i, "").replace(/^\w/, (c) => c.toUpperCase());
+      return { tool_calls: [call("propose_changes", { why: "So it comes up when it should", changes: [{ op: "create", kind: "nudge", data: { text: what, kind: "reminder", date: `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`, time: `${pad(t.getHours())}:${pad(t.getMinutes())}`, priority: "high", reason: "You asked me to remind you." } }] })] };
+    }
+    return { content: "Okay, I'll bring it up." };
+  }
   // what the fake microphone "said" (the ElevenLabs stand-in writes it down as this)
   if (/read me something short/i.test(text)) return { content: "Here is something short: the kettle is on." };
   // what the newest message is: a note from the app about Claude's reports, or a tool's result

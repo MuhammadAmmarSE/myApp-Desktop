@@ -86,10 +86,15 @@ const SECRET_PATTERNS = [
 // keep the word, hide what follows: "password: hunter22", "PIN is 4471", "api key = ..."
 const SECRET_LABELLED = /\b(password|passwd|passcode|pass code|pin|otp|cvv|secret|api[ _-]?key|access[ _-]?token|auth[ _-]?token|token|private key)(\s*(?:is|was|:|=|-)\s*)["']?[^\s"',]{3,}/gi;
 
+// and with only a space, when what follows looks like one (it has a digit or a symbol): "password
+// hunter22", "PIN 4471" — but not "change the wifi password tomorrow" or "pin the photo"
+const SECRET_SPACED = /\b(password|passwd|passcode|pass code|pin|otp|cvv|api[ _-]?key|access[ _-]?token|auth[ _-]?token|token|private key)(\s+)["']?(?=[^\s"',]*[\d!@#$%^&*_+=~?<>|\\/])[^\s"',]{3,}/gi;
+
 export function hideSecrets(text: string): string {
   let s = String(text == null ? "" : text);
   for (const re of SECRET_PATTERNS) s = s.replace(re, "[hidden]");
-  return s.replace(SECRET_LABELLED, "$1$2[hidden]");
+  s = s.replace(SECRET_LABELLED, "$1$2[hidden]");
+  return s.replace(SECRET_SPACED, (all, label: string, gap: string) => (/\[hidden\]/.test(all) ? all : `${label}${gap}[hidden]`));
 }
 
 // ---------- quiet hours ----------
