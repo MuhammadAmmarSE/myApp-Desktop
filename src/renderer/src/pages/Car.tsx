@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { AlertTriangle, CarFront, Droplets, FileCheck2, Fuel, Gauge, Pencil, Plus, Receipt, RefreshCw, Route, Trash2, Wrench, type LucideIcon } from "lucide-react";
-import { carSpend, currentPapers, fuelEconomy, isoDate, latestOdometer, paperStatus, serviceDue, type CarLogType, type Rec } from "@myapp/core";
+import { carSpend, currentPapers, fuelEconomy, groupNumber, isoDate, latestOdometer, paperStatus, serviceDue, type CarLogType, type Rec } from "@myapp/core";
 import { Button, Card, CardTitle, Empty, IconButton, ProgressRing, Segmented, Stat, Tag, toast, useContextMenu } from "@/components/ui";
 import { ColumnChart, Legend, LineChart } from "@/components/charts";
 import { useList } from "@/store/records";
@@ -21,7 +21,7 @@ import { rise } from "@/theme/motion";
 
 type Tab = CarLogType | "all";
 const ICON: Record<string, LucideIcon> = { fuel: Fuel, service: Wrench, paper: FileCheck2 };
-const km = (n: number) => `${Math.round(n).toLocaleString()} km`;
+const km = (n: number) => `${groupNumber(n)} km`;
 const inDays = (d: number) => (d === 0 ? "today" : d === 1 ? "tomorrow" : d === -1 ? "yesterday" : d < 0 ? `${-d} days ago` : `in ${d} days`);
 
 export default function CarPage() {
@@ -124,7 +124,7 @@ export default function CarPage() {
               <div className="text-right">
                 <div className="text-[12px] text-text3">On the clock</div>
                 <div className="font-display text-[30px] font-semibold leading-none tracking-[-0.02em] tnum" data-testid="odometer">
-                  {odo ? Math.round(odo).toLocaleString() : "—"}
+                  {odo ? groupNumber(odo) : "—"}
                   <span className="ml-1 text-[15px] font-medium text-text3">km</span>
                 </div>
               </div>

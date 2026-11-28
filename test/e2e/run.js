@@ -297,6 +297,29 @@ async function scenario(name, fn, always = false) {
     await until("the expense", async () => (await live("money")).find((r) => r.data.amount === 30000 && r.data.note === "Paid to various load"));
     await until("the note done", async () => !(await live("note")).find((r) => r.id === note.id));
     await win.getByText(/and the note is done/).waitFor();
+    // another one that isn't needed any more: from Capture (and Undo brings it back), then from Notes
+    await go("/notes/new");
+    if (
+      !(await win
+        .getByTestId("note-title")
+        .isVisible()
+        .catch(() => false))
+    )
+      await win.getByRole("tab", { name: "Write" }).click();
+    await win.getByTestId("note-title").fill("call the plumber about the tap");
+    await win.getByTestId("note-body").fill("call the plumber about the tap");
+    await win.getByLabel("Tags").fill("inbox");
+    await win.getByLabel("Tags").press("Tab");
+    const spare = await until("the second inbox note", async () => (await live("note")).find((r) => r.data.title === "call the plumber about the tap" && (r.data.tags || []).includes("inbox")));
+    await win.getByTestId("note-inbox").getByRole("button", { name: "Send to AI" }).click();
+    await win.getByTestId("review").waitFor({ timeout: 15000 });
+    await win.getByTestId("not-needed").click();
+    await until("the note deleted", async () => !(await live("note")).find((r) => r.id === spare.id));
+    await win.getByRole("status").filter({ hasText: "Deleted the note" }).getByRole("button", { name: "Undo" }).click();
+    await until("the note back", async () => (await live("note")).find((r) => r.id === spare.id));
+    await go("/notes");
+    await win.getByTestId("inbox-banner").getByTestId("inbox-drop").click();
+    await until("deleted from Notes", async () => !(await live("note")).find((r) => r.id === spare.id));
   });
 
   await scenario("lists: commas add several, and ticking one marks it bought", async () => {
@@ -600,6 +623,7 @@ async function scenario(name, fn, always = false) {
     const netBefore = await win.getByTestId("net").innerText();
     await win.getByTestId("add-keeping").click();
     await dialog().getByLabel("How much").fill("150000");
+    if ((await dialog().getByLabel("How much").inputValue()) !== "150,000") throw new Error("the amount isn't grouped as it's typed");
     await field("Who has it").fill("Abu");
     await saveDialog();
     const abu = await until("Abu's on the server", async () => (await live("owed")).find((r) => r.data.who === "Abu" && r.data.type === "keeping" && r.data.amount === 150000));
@@ -620,7 +644,10 @@ async function scenario(name, fn, always = false) {
     // Money: still yours, so what's left over is the same, with how much of it Abu has
     await go("/money");
     await win.getByTestId("net-with-others").getByText("Rs 150,000 of your money is with Abu").waitFor();
-    if ((await win.getByTestId("net").innerText()) !== netBefore) throw new Error("money with someone changed what's left over");
+    // on top: what's with you now, worked out from what's left this month
+    await win.getByTestId("hand-line").getByText(`${netBefore} left this month − Rs 150,000 given to others`).waitFor();
+    const n = (t) => Number(t.replace(/[^\d]/g, "")) * (/−/.test(t) ? -1 : 1);
+    if (n(await win.getByTestId("hand").innerText()) !== n(netBefore) - 150000) throw new Error(`with you now: ${await win.getByTestId("hand").innerText()} from ${netBefore}`);
     await win.getByTestId("with-others").locator(`[data-owed="${abu.id}"]`).waitFor();
     if (process.env.E2E_SHOTS) {
       await win.getByTestId("with-others").scrollIntoViewIfNeeded();

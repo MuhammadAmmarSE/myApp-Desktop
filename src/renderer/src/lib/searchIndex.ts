@@ -1,7 +1,7 @@
 // What Search looks through: every record, every page, and things you can do (add something,
 // switch the theme, sync). Each entry says how it looks and what opening it does; the ranking is
 // core's `search`, the same as on the phone.
-import { THEMES, isoDate, minutesInWords, type Kind, type Rec, type SearchDoc } from "@myapp/core";
+import { THEMES, groupNumber, isoDate, minutesInWords, type Kind, type Rec, type SearchDoc } from "@myapp/core";
 import { dayWord, money, monthDay, shortDate, time12 } from "./format";
 import { logTitle } from "./car";
 import type { EditKind } from "@/store/ui";
@@ -215,7 +215,7 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       group: "money",
       title: m.data.note || m.data.category,
       body: m.data.category,
-      keywords: `${m.data.type} ${m.data.amount}`,
+      keywords: `${m.data.type} ${m.data.amount} ${groupNumber(m.data.amount)}`,
       detail: `${m.data.type === "income" ? "Earned" : "Spent"} ${money(m.data.amount, m.data.currency || ctx.currency)} · ${shortDate(m.data.date, today)}${m.data.paid_from ? " · on a hisaab" : ""}`,
       open: m.data.paid_from ? { to: `/funds/${m.data.paid_from}` } : { edit: "money", rec: m },
     });
@@ -237,7 +237,7 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       group: "fund",
       title: `${f.data.purpose || "Money"} · from ${f.data.from}`,
       body: f.data.notes,
-      keywords: `hisaab ${f.data.from} ${f.data.amount}`,
+      keywords: `hisaab ${f.data.from} ${f.data.amount} ${groupNumber(f.data.amount)}`,
       detail: `Gave you ${money(f.data.amount, f.data.currency || ctx.currency)} · ${shortDate(f.data.date, today)}${f.data.closed ? " · settled" : ""}`,
       open: { to: `/funds/${f.id}` },
     });
@@ -248,7 +248,7 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       group: "owed",
       title: o.data.type === "loan" ? `Lent to ${o.data.who}` : `With ${o.data.who}`,
       body: o.data.notes,
-      keywords: `${o.data.type === "loan" ? "udhaar loan lent owes" : "amanat keeping has my money"} ${o.data.who} ${o.data.amount}`,
+      keywords: `${o.data.type === "loan" ? "udhaar loan lent owes" : "amanat keeping has my money"} ${o.data.who} ${o.data.amount} ${groupNumber(o.data.amount)}`,
       detail: `${money(o.data.amount, o.data.currency || ctx.currency)} · ${shortDate(o.data.date, today)}${o.data.closed ? " · settled" : ""}`,
       open: { to: `/owed/${o.id}` },
     });

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { ArrowDownLeft, ArrowUpRight, Banknote, CalendarRange, ChevronLeft, ChevronRight, Copy, Download, Filter, Gauge, HandCoins, Pencil, PiggyBank, Plus, Receipt, Repeat, Search, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
-import { fundStanding, isoDate, monthJobs, monthTotals, owedLine, ownMoney, potStanding, POT_503020, POT_STARTERS, type Rec } from "@myapp/core";
+import { flowMoved, fundStanding, inHand, isoDate, monthJobs, owedFlow, monthTotals, owedLine, ownMoney, potStanding, POT_503020, POT_STARTERS, type Rec } from "@myapp/core";
 import { createPot, potVar, usePots } from "@/lib/pots";
 import { JobsBar, PotMark, PotMeter, POT_ICON } from "@/components/forms/PotEditors";
 import { moveOntoFund, useFunds } from "@/lib/funds";
@@ -107,6 +107,10 @@ export default function Money() {
     const earned = ms.reduce((n, m) => n + m.earned, 0);
     return { spent, earned, net: earned - spent, categories: [] as [string, number][] };
   }, [all, month, year, view, currency]);
+  // what's in your hands of the period's money, once some of it went to others (or came back)
+  const owedRecs = useList("owed");
+  const flow = useMemo(() => owedFlow(owedRecs as any, view === "year" ? String(year) : month, currency), [owedRecs, view, year, month, currency]);
+  const hand = flowMoved(flow) ? inHand(totals.net, flow) : null;
   const prev = useMemo(
     () =>
       view === "month"
@@ -231,13 +235,30 @@ export default function Money() {
           <motion.div {...rise(1)}>
             <Card strong className="relative h-full overflow-hidden !p-4">
               <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full accent-grad opacity-20 blur-2xl" />
-              <div className="relative flex items-center gap-2 text-[12px] font-medium text-text2">
-                <PiggyBank size={14} /> {totals.net >= 0 ? "Left over" : "Over by"}
-              </div>
-              <div className={clsx("relative mt-2 font-display text-[28px] font-semibold leading-none tracking-[-0.02em] tnum", totals.net < 0 && "text-danger")} data-testid="net">
-                {fmt(Math.abs(totals.net))}
-              </div>
-              <div className="relative mt-2 text-[12px] text-text3">{totals.earned ? `${Math.round((Math.max(0, totals.net) / totals.earned) * 100)}% of what came in` : "Nothing came in yet"}</div>
+              {hand !== null ? (
+                <>
+                  <div className="relative flex items-center gap-2 text-[12px] font-medium text-text2">
+                    <Wallet size={14} /> {view === "month" && month === thisMonth ? "With you now" : view === "year" ? "In hand from that year" : "In hand from that month"}
+                  </div>
+                  <div className={clsx("relative mt-2 font-display text-[28px] font-semibold leading-none tracking-[-0.02em] tnum", hand < 0 && "text-danger")} data-testid="hand">
+                    {hand < 0 ? "−" : ""}
+                    {fmt(Math.abs(hand))}
+                  </div>
+                  <div className="relative mt-2 text-[12px] text-text3" data-testid="hand-line">
+                    {handLine(totals.net, flow, fmt, view === "year" ? "this year" : "this month")}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="relative flex items-center gap-2 text-[12px] font-medium text-text2">
+                    <PiggyBank size={14} /> {totals.net >= 0 ? "Left over" : "Over by"}
+                  </div>
+                  <div className={clsx("relative mt-2 font-display text-[28px] font-semibold leading-none tracking-[-0.02em] tnum", totals.net < 0 && "text-danger")} data-testid="net">
+                    {fmt(Math.abs(totals.net))}
+                  </div>
+                  <div className="relative mt-2 text-[12px] text-text3">{totals.earned ? `${Math.round((Math.max(0, totals.net) / totals.earned) * 100)}% of what came in` : "Nothing came in yet"}</div>
+                </>
+              )}
               {owed.totals.total > 0 && (
                 <button
                   type="button"
@@ -688,6 +709,20 @@ export default function Money() {
 
 // one pot on the Money page: what's in it, how far along, where it stands
 // "Rs 150,000 of it is with Abu" / "Rs 170,000 is with others: 150,000 kept for you, 20,000 lent"
+// how "with you now" was worked out: "Rs 199,050 left this month − Rs 150,000 given to others"
+function handLine(net: number, flow: { given: number; back: number; forgiven: number }, fmt: (n: number) => string, when: string) {
+  const hand = inHand(net, flow);
+  return [
+    net < 0 ? `${fmt(-net)} over ${when}` : `${fmt(net)} left ${when}`,
+    flow.given ? `− ${fmt(flow.given)} given to others` : "",
+    flow.back ? `+ ${fmt(flow.back)} back from them` : "",
+    flow.forgiven ? `+ ${fmt(flow.forgiven)} let go (already in spent)` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .concat(hand < 0 ? `: ${fmt(-hand)} of what went to them was money you had before` : "");
+}
+
 function withOthersLine(keeping: number, lent: number, who: string[], fmt: (n: number) => string) {
   const people = [...new Set(who)];
   if (people.length === 1) return `${fmt(keeping + lent)} of your money is with ${people[0]}${lent && !keeping ? " (lent)" : ""}`;

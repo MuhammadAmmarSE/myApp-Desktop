@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Banknote, Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, PiggyBank, ArrowRightLeft, ReceiptText, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import {
+  groupNumber,
   addDays,
   CAR_PAPERS,
   CAR_SERVICES,
@@ -889,7 +890,7 @@ function DateForm({ rec, preset, close }: FormProps<"date">) {
           <Select<number | null> value={day} onChange={setDay} placeholder="Day" options={Array.from({ length: maxDay }, (_, i) => ({ value: (i + 1) as number | null, label: String(i + 1) }))} />
         </Field>
         <Field label="Year" hint="For the age">
-          <NumberInput value={year} onChange={(v) => setYear(v == null ? null : Math.round(v))} placeholder="Optional" />
+          <NumberInput plain value={year} onChange={(v) => setYear(v == null ? null : Math.round(v))} placeholder="Optional" />
         </Field>
       </div>
       <Field label="Remind me">
@@ -1281,7 +1282,7 @@ function CarLogForm({ rec, preset, close }: FormProps<"car_log">) {
         </Row2>
       )}
       {type !== "paper" && (
-        <Field label="On the clock (km)" hint={car?.data.odometer ? `Last reading: ${car.data.odometer.toLocaleString()} km` : "For km per litre and the next service."}>
+        <Field label="On the clock (km)" hint={car?.data.odometer ? `Last reading: ${groupNumber(car.data.odometer)} km` : "For km per litre and the next service."}>
           <NumberInput value={odo} onChange={setOdo} placeholder="Optional" />
         </Field>
       )}

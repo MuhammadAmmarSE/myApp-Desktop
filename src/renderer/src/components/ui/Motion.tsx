@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { animate, motion } from "motion/react";
 import { useReduced } from "@/theme";
 import { ease } from "@/theme/motion";
+import { groupNumber } from "@myapp/core";
 
 export function useCountUp(value: number, ms = 700) {
   const reduced = useReduced();
@@ -22,7 +23,7 @@ export function useCountUp(value: number, ms = 700) {
   return shown;
 }
 
-export function CountUp({ value, format = (n) => Math.round(n).toLocaleString(), className }: { value: number; format?: (n: number) => string; className?: string }) {
+export function CountUp({ value, format = (n) => groupNumber(n), className }: { value: number; format?: (n: number) => string; className?: string }) {
   const v = useCountUp(value);
   return <span className={`tnum ${className || ""}`}>{format(v)}</span>;
 }

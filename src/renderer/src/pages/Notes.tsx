@@ -39,7 +39,7 @@ import { cleanTags, type Rec } from "@myapp/core";
 import { Button, Chip, Empty, IconButton, Input, Kbd, Menu, Segmented, Tag, toast, Tooltip, useContextMenu } from "@/components/ui";
 import { useList, useRecords } from "@/store/records";
 import { navigate } from "@/lib/router";
-import { INBOX, isInbox, sendToAi } from "@/lib/inbox";
+import { dropNotes, dropWord, INBOX, isInbox, sendToAi } from "@/lib/inbox";
 import { useListNav } from "@/lib/listNav";
 import { bridge, isMac, modKey } from "@/lib/bridge";
 import { ago, readingTime } from "@/lib/format";
@@ -158,6 +158,18 @@ export default function Notes({ params }: { params: Record<string, string> }) {
                 <div className="text-[12.5px] font-medium">{waiting.length === 1 ? "A note is waiting for the AI" : `${waiting.length} notes are waiting for the AI`}</div>
                 <div className="text-[11.5px] text-text3">Saved while the server was offline</div>
               </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  const d = dropNotes(waiting.map((n) => n.id));
+                  if (d.removed) toast.undo(dropWord(d.removed), d.undo);
+                }}
+                title="Not needed any more: delete it"
+                data-testid="inbox-drop"
+              >
+                Not needed
+              </Button>
               <Button size="sm" variant="primary" onClick={() => sendToAi(waiting)}>
                 Send
               </Button>

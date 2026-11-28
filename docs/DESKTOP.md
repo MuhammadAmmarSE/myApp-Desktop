@@ -170,7 +170,9 @@ An `owed` record is your own money someone else has: `type` keeping (kept for yo
 `who`, `amount`, `date`, `account`, `due` (a loan's day), and `moves` (back / more / forgave, each
 with its date). Core's `owedSummary` works out what's left; `owedWithMove` caps a step back at what
 they have and settles it when nothing is left. It's never money: Money's totals don't change, and
-the hero says how much of your money is with others (`owedTotals`). Letting a loan's rest go
+the hero says how much of your money is with others (`owedTotals`). Once some of the period's
+money went to others (or came back), the hero leads with **With you now** (`inHand(net,
+owedFlow(owed, month or year))`: left over − given + back + let go), with the sum under it. Letting a loan's rest go
 (`forgave`) is the one step that touches Money: an expense (category Gifts) with the step's
 `money_id`, removed again when the step is taken back or the record deleted. `lib/owed.ts` has
 `createOwed`, `owedStep`, `takeStepBack`, `removeOwed` (each returns its undo) and `useOwed`. The

@@ -3,6 +3,7 @@
 import { createContext, forwardRef, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type MutableRefObject, type ReactNode, type TextareaHTMLAttributes } from "react";
 import clsx from "clsx";
 import { X, type LucideIcon } from "lucide-react";
+import { groupTyped, ungroup } from "@myapp/core";
 
 // A Field's label belongs to the first control inside it (screen readers read it, clicking it
 // focuses the control). Controls ask for the id with useFieldId; only the first one gets it, so a
@@ -131,26 +132,53 @@ export function Field({ label, hint, error, children, className, htmlFor, right 
   );
 }
 
-// a number, typed freely ("1,200" and "1200.5" both work); null when empty
-export function NumberInput({ value, onChange, ...rest }: Omit<InputProps, "value" | "onChange"> & { value: number | null | undefined; onChange: (v: number | null) => void }) {
-  const [text, setText] = useState(value == null ? "" : String(value));
+// a number, typed freely: shown with its thousands marked as you type ("150,000"), handed back as a
+// number; null when empty. `plain` leaves the marks out (a year).
+const markOf = (v: number | null | undefined, plain?: boolean) => (v == null ? "" : plain ? String(v) : groupTyped(String(v)));
+export function NumberInput({ value, onChange, plain, ...rest }: Omit<InputProps, "value" | "onChange"> & { value: number | null | undefined; onChange: (v: number | null) => void; plain?: boolean }) {
+  const [text, setText] = useState(markOf(value, plain));
+  const inner = useRef<HTMLInputElement>(null);
+  const caret = useRef<number | null>(null);
   // a value set from outside (a reset, an edit elsewhere) shows; one being typed is left alone
   useEffect(() => {
-    const cur = text.trim() === "" ? null : Number(text.replace(/,/g, ""));
-    if ((value ?? null) !== (Number.isNaN(cur as number) ? null : cur)) setText(value == null ? "" : String(value));
+    const raw = plain ? text.replace(/,/g, "") : ungroup(text);
+    const cur = raw.trim() === "" ? null : Number(raw);
+    if ((value ?? null) !== (Number.isNaN(cur as number) ? null : cur)) setText(markOf(value, plain));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
+  // the caret stays after the digit you just typed, though the marks moved round it
+  useLayoutEffect(() => {
+    const el = inner.current;
+    if (caret.current == null || !el || document.activeElement !== el) return;
+    el.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  }, [text]);
   return (
     <Input
+      ref={inner}
       inputMode="decimal"
       value={text}
       onChange={(v) => {
-        const clean = v.replace(/[^\d.,-]/g, "");
-        setText(clean);
-        const n = Number(clean.replace(/,/g, ""));
-        onChange(clean === "" || Number.isNaN(n) ? null : n);
+        if (plain) {
+          const clean = v.replace(/[^\d.,-]/g, "");
+          setText(clean);
+          const n = Number(clean.replace(/,/g, ""));
+          onChange(clean === "" || Number.isNaN(n) ? null : n);
+          return;
+        }
+        const pos = inner.current?.selectionStart ?? v.length;
+        const before = v.slice(0, pos).replace(/[^\d.]/g, "").length;
+        const shown = groupTyped(v);
+        let i = 0;
+        for (let seen = 0; i < shown.length && seen < before; i++) if (/[\d.]/.test(shown[i])) seen++;
+        caret.current = i;
+        setText(shown);
+        const raw = ungroup(v);
+        const n = Number(raw);
+        onChange(raw === "" || Number.isNaN(n) ? null : n);
       }}
       {...rest}
+      className={clsx("tnum", rest.className)}
     />
   );
 }

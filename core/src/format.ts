@@ -68,4 +68,24 @@ export const compact = (n: number) => {
   if (a >= 1e4) return `${(n / 1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/, "")}k`;
   return group(n);
 };
+// a whole number with its thousands marked: 48200 -> "48,200" (the same on every phone, whatever its language)
+export const groupNumber = (n: number) => String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ",").replace(/^/, n < 0 ? "−" : "");
+
+// An amount as you type it: only digits and one point (two places after it at most), no leading
+// zeros. ungroup gives what the form keeps ("150000"); groupTyped what the field shows ("150,000").
+export function ungroup(s: string): string {
+  let t = String(s == null ? "" : s).replace(/[^\d.]/g, "");
+  const dot = t.indexOf(".");
+  if (dot >= 0) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+  t = t.replace(/^0+(?=\d)/, "");
+  return t === "." ? "0." : t;
+}
+export function groupTyped(s: string): string {
+  const t = ungroup(s);
+  if (!t) return "";
+  const [i, f] = t.split(".");
+  const int = i.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return f === undefined ? int : `${int}.${f}`;
+}
+
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

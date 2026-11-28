@@ -1,7 +1,7 @@
 // What should ring, worked out from the records: the same list the phone schedules (reminders,
 // events before they start, timed to-dos, birthdays and anniversaries, the car's papers and service,
 // warranties ending). The main process shows them at the right time, even with the window closed.
-import { addDays, currentPapers, isoDate, nextOccurrence, PAPER_REMIND, parseDate, RENEW_REMIND, toEpoch, WARRANTY_REMIND, yearsAt } from "@myapp/core";
+import { addDays, currentPapers, groupNumber, isoDate, nextOccurrence, PAPER_REMIND, parseDate, RENEW_REMIND, toEpoch, WARRANTY_REMIND, yearsAt } from "@myapp/core";
 import type { Alert } from "@shared/ipc";
 import { useRecords } from "@/store/records";
 import { bridge } from "@/lib/bridge";
@@ -63,7 +63,7 @@ export function upcomingAlerts(now = Date.now()): Alert[] {
     if (next?.data.next_date) {
       for (const before of [7, 1, 0]) {
         const at = at9(addDays(next.data.next_date, -before));
-        if (within(at)) out.push({ at, title: `Service due ${label(before)}`, body: `${car.data.name}${next.data.next_km ? ` · or at ${next.data.next_km.toLocaleString()} km` : ""}`, url: "/car" });
+        if (within(at)) out.push({ at, title: `Service due ${label(before)}`, body: `${car.data.name}${next.data.next_km ? ` · or at ${groupNumber(next.data.next_km)} km` : ""}`, url: "/car" });
       }
     }
   }

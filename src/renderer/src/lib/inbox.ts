@@ -26,6 +26,12 @@ export function sendToAi(notes: Rec<"note">[]) {
   navigate(`/capture?${new URLSearchParams({ text, go: "1", notes: notes.map((n) => n.id).join(",") }).toString()}`);
 }
 
+// not needed after all: the waiting notes among `ids` are deleted; gives what brings them back
+export function dropNotes(ids: string[]): { removed: number; undo: () => void } {
+  return doneWithNotes(ids, []);
+}
+export const dropWord = (n: number) => (n === 1 ? "Deleted the note" : `Deleted ${n} notes`);
+
 // after saving what the AI found: the inbox notes among `ids` go; gives what undoes it all
 export function doneWithNotes(ids: string[], created: string[]): { removed: number; undo: () => void } {
   const s = useRecords.getState();

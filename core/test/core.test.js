@@ -927,4 +927,32 @@ ok("owed: the assistant can propose it, and fills in what it leaves out", () => 
   assert.deepStrictEqual(c.describeChange(st.change, { currency: "PKR", today: "2026-11-28", current: abu.data }), { verb: "Took some back", title: "With Abu", detail: "Rs 20,000 · Today · Rs 130,000 left with them" });
   assert.deepStrictEqual(c.describeRecord("owed", { type: "loan", who: "Ali", amount: 20000, date: "2026-11-01", due: "2026-12-05", moves: [{ type: "back", amount: 5000, date: "2026-11-10" }] }, { currency: "PKR", today: "2026-11-28" }).title, "Lent to Ali");
 });
+ok("amounts as you type them: grouped in the field, plain in the form", () => {
+  assert.strictEqual(c.groupTyped("150000"), "150,000");
+  assert.strictEqual(c.groupTyped("1,50,000"), "150,000");
+  assert.strictEqual(c.groupTyped("1234.567"), "1,234.56");
+  assert.strictEqual(c.groupTyped("0012"), "12");
+  assert.strictEqual(c.groupTyped("0.5"), "0.5");
+  assert.strictEqual(c.groupTyped("."), "0.");
+  assert.strictEqual(c.groupTyped("12.3.4"), "12.34");
+  assert.strictEqual(c.groupTyped("Rs 2,500"), "2,500");
+  assert.strictEqual(c.groupTyped(""), "");
+  assert.strictEqual(c.ungroup("150,000.50"), "150000.50");
+  assert.strictEqual(c.groupNumber(48200), "48,200");
+  assert.strictEqual(c.groupNumber(-1500), "−1,500");
+  assert.strictEqual(c.groupNumber(999), "999");
+});
+ok("owed: what's in your hands this month, after what went to others and came back", () => {
+  const abu = { id: "o1", data: { type: "keeping", who: "Abu", amount: 150000, currency: "PKR", date: "2026-11-28", moves: [] } };
+  const ali = { id: "o2", data: { type: "loan", who: "Ali", amount: 50000, currency: "PKR", date: "2026-10-02", moves: [{ type: "back", amount: 20000, date: "2026-11-05" }, { type: "forgave", amount: 5000, date: "2026-11-20" }, { type: "more", amount: 1000, date: "2026-10-30" }] } };
+  const usd = { id: "o3", data: { type: "loan", who: "Sam", amount: 100, currency: "USD", date: "2026-11-01", moves: [] } };
+  const gone = { id: "o4", deleted: 1, data: { type: "loan", who: "X", amount: 9, currency: "PKR", date: "2026-11-01", moves: [] } };
+  const nov = c.owedFlow([abu, ali, usd, gone], "2026-11", "PKR");
+  assert.deepStrictEqual(nov, { given: 150000, back: 20000, forgiven: 5000 });
+  assert.strictEqual(c.inHand(199050, nov), 74050);
+  assert.strictEqual(c.inHand(199050, c.owedFlow([abu], "2026-11", "PKR")), 49050, "the 200,000 with 150,000 of it at Abu's");
+  assert.deepStrictEqual(c.owedFlow([abu, ali], "2026-10", "PKR"), { given: 51000, back: 0, forgiven: 0 });
+  assert.strictEqual(c.flowMoved(c.owedFlow([abu], "2026-09", "PKR")), false);
+  assert.deepStrictEqual(c.owedFlow([abu, ali], "2026", "PKR"), { given: 201000, back: 20000, forgiven: 5000 }, "a whole year");
+});
 console.log(`core: ${n} checks passed`);

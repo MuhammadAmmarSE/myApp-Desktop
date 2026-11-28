@@ -39,7 +39,7 @@ import {
   PiggyBank,
   Brain,
 } from "lucide-react";
-import { search, type Kind } from "@myapp/core";
+import { groupNumber, search, type Kind } from "@myapp/core";
 import { talk } from "@/lib/talk";
 import { commands, GROUP_ORDER, GROUP_WORD, recordEntries, type Entry, type Open } from "@/lib/searchIndex";
 import { bridge, modKey } from "@/lib/bridge";
@@ -311,7 +311,7 @@ export function CommandPalette() {
                 <kbd className="rounded border border-line px-1">Shift Enter</kbd> edit saved text
               </span>
               <span className="flex-1" />
-              <span>{docs.length.toLocaleString()} things searched</span>
+              <span>{groupNumber(docs.length)} things searched</span>
             </div>
           </motion.div>
         </div>

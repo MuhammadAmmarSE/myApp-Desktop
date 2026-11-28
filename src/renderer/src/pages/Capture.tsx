@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowRight, Bot, Check, CornerDownLeft, History, Mic, NotebookPen, PencilLine, RotateCcw, Sparkles, Undo2, X } from "lucide-react";
+import { ArrowRight, Bot, Check, CornerDownLeft, History, Mic, NotebookPen, PencilLine, RotateCcw, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { actionToRecords, nextPotColor, saveActions, spokenAnswer, type Action, type PersonRef } from "@myapp/core";
 import { Button, Card, CardTitle, Chip, Empty, IconButton, Kbd, Page, Textarea, toast } from "@/components/ui";
 import { Orb, type OrbState } from "@/components/orb/Orb";
@@ -17,7 +17,7 @@ import { owedStep, useOwed } from "@/lib/owed";
 import { autoSplit, movePot, potsNow, usePots } from "@/lib/pots";
 import { addMove, useFunds } from "@/lib/funds";
 import { navigate, useQuery } from "@/lib/router";
-import { doneWithNotes } from "@/lib/inbox";
+import { doneWithNotes, dropNotes, dropWord } from "@/lib/inbox";
 import { isMac, modKey } from "@/lib/bridge";
 import { ApiError } from "@/lib/api";
 import { typing } from "@/lib/keys";
@@ -238,6 +238,15 @@ export default function Capture() {
     }, 1300);
   };
 
+  // it came from notes waiting for the AI, and they aren't needed any more: delete them (Undo
+  // brings them back)
+  const notNeeded = () => {
+    const d = dropNotes(fromNotes);
+    if (d.removed) toast.undo(dropWord(d.removed), d.undo);
+    navigate("/notes");
+  };
+  const notNeededLabel = fromNotes.length === 1 ? "Not needed: delete the note" : "Not needed: delete the notes";
+
   const saveAsNote = () => {
     const input = (asked.current || text).trim();
     if (!input) return;
@@ -414,6 +423,11 @@ export default function Capture() {
                         <Button icon={NotebookPen} onClick={saveAsNote}>
                           {fromNotes.length ? "Keep the note" : "Save it as a note"}
                         </Button>
+                        {fromNotes.length > 0 && (
+                          <Button variant="ghost" icon={Trash2} onClick={notNeeded} data-testid="not-needed">
+                            {notNeededLabel}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -515,6 +529,11 @@ export default function Capture() {
                   {result.assistant && actions.length > 0 && (
                     <Button variant="ghost" icon={Bot} onClick={toAssistant}>
                       Ask the assistant instead
+                    </Button>
+                  )}
+                  {fromNotes.length > 0 && phase !== "saved" && (
+                    <Button variant="ghost" icon={Trash2} onClick={notNeeded} data-testid="not-needed">
+                      {notNeededLabel}
                     </Button>
                   )}
                   <Button variant="ghost" onClick={() => reset()}>

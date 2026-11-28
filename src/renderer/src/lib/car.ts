@@ -1,7 +1,7 @@
 // Saving and removing My car's log. A fill-up, a service or a renewed paper that cost something is
 // also an expense in Money (Fuel, or Car), linked by money_id: changing the cost changes the
 // expense, clearing it or removing the entry removes the expense, and Undo brings both back.
-import { currentPapers, isoDate, latestOdometer, paperStatus, serviceDue, type CarLogData, type MoneyData, type Rec } from "@myapp/core";
+import { currentPapers, groupNumber, isoDate, latestOdometer, paperStatus, serviceDue, type CarLogData, type MoneyData, type Rec } from "@myapp/core";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 
@@ -81,7 +81,7 @@ export function carHeadsUp(cars: Rec<"car">[], logs: Rec<"car_log">[], today = i
     const sv = serviceDue(mine, latestOdometer(car.data, mine), today);
     if (sv?.due) {
       const byKm = sv.km != null && sv.km <= 500 && (sv.days == null || sv.days > 14);
-      const words = byKm ? (sv.km! <= 0 ? `Service ${(-sv.km!).toLocaleString()} km over` : `Service in ${sv.km!.toLocaleString()} km`) : `Service ${sv.days! < 0 ? "overdue" : when(sv.days!)}`;
+      const words = byKm ? (sv.km! <= 0 ? `Service ${groupNumber(-sv.km!)} km over` : `Service in ${groupNumber(sv.km!)} km`) : `Service ${sv.days! < 0 ? "overdue" : when(sv.days!)}`;
       out.push({ what: "Service", car: car.data.name, days: byKm ? null : sv.days, km: sv.km, words });
     }
   }

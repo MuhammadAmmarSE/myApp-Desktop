@@ -104,6 +104,37 @@ export function owedTotals<T extends R>(recs: T[], currency: string, today = "")
   return { keeping, lent, total: round(keeping + lent), open };
 }
 
+// What moved between you and others in a month, in your own money's currency: what left your hands
+// (given to keep or lent, first and later), what came back (taken or paid back), and what you let go
+// (that's already spending in Money, an expense, so it's added back to what's in your hands).
+export interface OwedFlow {
+  given: number;
+  back: number;
+  forgiven: number;
+}
+// period: a month ("2026-11") or a year ("2026")
+export function owedFlow(recs: R[], period: string, currency: string): OwedFlow {
+  const flow = { given: 0, back: 0, forgiven: 0 };
+  const inPeriod = (d: unknown) => typeof d === "string" && d.slice(0, period.length) === period;
+  for (const r of recs) {
+    if (r.deleted || (r.data.currency || currency) !== currency) continue;
+    if (inPeriod(r.data.date)) flow.given += Number(r.data.amount) || 0;
+    for (const m of r.data.moves || []) {
+      if (!inPeriod(m.date)) continue;
+      const n = Number(m.amount) || 0;
+      if (m.type === "more") flow.given += n;
+      else if (m.type === "back") flow.back += n;
+      else if (m.type === "forgave") flow.forgiven += n;
+    }
+  }
+  return { given: round(flow.given), back: round(flow.back), forgiven: round(flow.forgiven) };
+}
+// what's in your hands from a month's money: what's left of it (earned less spent), less what went
+// to others, plus what came back ("of this 199,050, Abu has 150,000: 49,050 is with you")
+export const inHand = (net: number, flow: OwedFlow) => round(net - flow.given + flow.back + flow.forgiven);
+// it's worth saying only when something moved that month
+export const flowMoved = (flow: OwedFlow) => flow.given > 0 || flow.back > 0 || flow.forgiven > 0;
+
 // one line about it: "Abu has Rs 150,000 of yours" / "Ali owes you Rs 30,000 of Rs 50,000 · due 5 Dec"
 export function owedLine(rec: { data: OwedData }, currency: string, today = ""): string {
   const s = owedSummary(rec, today);

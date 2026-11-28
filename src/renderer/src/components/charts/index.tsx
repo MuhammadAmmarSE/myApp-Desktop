@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import clsx from "clsx";
 import { useReduced } from "@/theme";
 import { ease } from "@/theme/motion";
+import { groupNumber } from "@myapp/core";
 
 export type Series = { key: string; name: string; color: string };
 
@@ -26,7 +27,7 @@ export const axisNumber = (n: number, max: number) => {
     if (n >= 1e6) return `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`;
     if (n >= 1e3) return `${(n / 1e3).toFixed(n % 1e3 ? 1 : 0)}K`;
   }
-  return n.toLocaleString();
+  return groupNumber(n);
 };
 
 function useWidth() {
@@ -89,7 +90,7 @@ export function ColumnChart({
   data,
   series,
   height = 220,
-  format = (n) => n.toLocaleString(),
+  format = (n) => groupNumber(n),
   highlight,
   onPick,
   label,
@@ -182,7 +183,7 @@ export function LineChart({
   points,
   series,
   height = 220,
-  format = (n) => n.toLocaleString(),
+  format = (n) => groupNumber(n),
   xLabel,
   label,
   marker,
@@ -273,7 +274,7 @@ export function LineChart({
 }
 
 // ---------- ranked bars: magnitude by name (categories) ----------
-export function BarList({ items, format = (n) => n.toLocaleString(), color = "var(--viz-1)", onPick, max: maxRows = 8, selected }: { items: { key: string; label: string; value: number; hint?: string }[]; format?: (n: number) => string; color?: string; onPick?: (key: string) => void; max?: number; selected?: string | null }) {
+export function BarList({ items, format = (n) => groupNumber(n), color = "var(--viz-1)", onPick, max: maxRows = 8, selected }: { items: { key: string; label: string; value: number; hint?: string }[]; format?: (n: number) => string; color?: string; onPick?: (key: string) => void; max?: number; selected?: string | null }) {
   const reduced = useReduced();
   const rows = items.slice(0, maxRows);
   const rest = items.slice(maxRows);
