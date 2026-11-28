@@ -4,13 +4,14 @@
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Check, Copy, HandCoins, Pencil, Plus, RotateCcw, ShoppingBasket, Trash2, Undo2, Wallet } from "lucide-react";
-import { fundSummary, hisaabText, isoDate, type FundMoveType, type Rec } from "@myapp/core";
+import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Check, Copy, HandCoins, History, Pencil, Plus, RotateCcw, ShoppingBasket, Trash2, Undo2, UserRound, Wallet } from "lucide-react";
+import { fundCandidates, fundSummary, hisaabText, isoDate, type FundMoveType, type Rec } from "@myapp/core";
 import { Button, Card, CardTitle, Dialog, Empty, Field, IconButton, Input, NumberInput, Tag, toast, useContextMenu } from "@/components/ui";
 import { useList, useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 import { edit } from "@/store/ui";
-import { addMove, removeFund, removeMove, removeSpend, reopenIfOwed } from "@/lib/funds";
+import { addMove, removeFund, removeMove, removeSpend, reopenIfOwed, takeOffFund } from "@/lib/funds";
+import { FundAttachDialog } from "@/components/forms/FundAttach";
 import { usePageKeys } from "@/lib/keys";
 import { navigate } from "@/lib/router";
 import { bridge } from "@/lib/bridge";
@@ -42,7 +43,10 @@ export default function Fund({ params }: { params: Record<string, string> }) {
   const [amount, setAmount] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [toBuy, setToBuy] = useState("");
+  const [attach, setAttach] = useState(false);
   const s = useMemo(() => (fund && !fund.deleted ? fundSummary(fund, money$, items) : null), [fund, money$, items]);
+  // your own spending around when they gave it: some of it may have been with their money
+  const already = useMemo(() => (fund && !fund.deleted && !fund.data.closed ? fundCandidates(fund, money$, { today: isoDate() }).length : 0), [fund, money$]);
 
   usePageKeys(
     (e) => {
@@ -50,9 +54,10 @@ export default function Fund({ params }: { params: Record<string, string> }) {
       const k = e.key.toLowerCase();
       if (k === "e") return (edit("fund", fund), true);
       if (k === "a") return (edit("money", null, { paid_from: fund.id, type: "expense", category: fund.data.purpose === "Medicine" ? "Health" : "Groceries" }), true);
+      if (k === "p" && already) return (setAttach(true), true);
       if (e.key === "Escape") return (navigate("/money"), true);
     },
-    [fund],
+    [fund, already],
   );
 
   if (!fund || fund.deleted || !s) {
@@ -224,6 +229,7 @@ export default function Fund({ params }: { params: Record<string, string> }) {
                           onContextMenu={(e) =>
                             ctx(e, [
                               { label: "Edit", icon: Pencil, onSelect: () => edit("money", m) },
+                              ...(m.data.type === "expense" ? [{ label: "Make it my own spending", icon: UserRound, onSelect: () => toast.undo(`${m.data.note || m.data.category} is your own spending again`, takeOffFund(m)) }] : []),
                               { type: "separator" },
                               { label: "Delete", icon: Trash2, danger: true, onSelect: () => toast.undo(`Deleted ${m.data.note || m.data.category}`, removeSpend(m)) },
                             ])
@@ -244,6 +250,13 @@ export default function Fund({ params }: { params: Record<string, string> }) {
                   </table>
                 ) : (
                   <Empty compact icon={ShoppingBasket} title="Nothing bought yet" body="Mark an item bought with its price, or add what you bought here." />
+                )}
+                {already > 0 && (
+                  <div className="border-t border-line px-4 py-2.5">
+                    <Button size="sm" variant="ghost" icon={History} kbd="P" onClick={() => setAttach(true)} data-testid="attach-open">
+                      Put what you already bought on it
+                    </Button>
+                  </div>
                 )}
               </Card>
             </motion.div>
@@ -284,6 +297,7 @@ export default function Fund({ params }: { params: Record<string, string> }) {
         </div>
       </div>
 
+      <FundAttachDialog open={attach} fund={fund} onClose={() => setAttach(false)} />
       <Dialog
         open={!!step}
         onClose={() => setStep(null)}

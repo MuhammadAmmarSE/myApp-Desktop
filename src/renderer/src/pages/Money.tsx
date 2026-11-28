@@ -9,7 +9,7 @@ import { ArrowDownLeft, ArrowUpRight, CalendarRange, ChevronLeft, ChevronRight, 
 import { fundStanding, isoDate, monthJobs, monthTotals, ownMoney, potStanding, POT_503020, POT_STARTERS, type Rec } from "@myapp/core";
 import { createPot, potVar, usePots } from "@/lib/pots";
 import { JobsBar, PotMark, PotMeter, POT_ICON } from "@/components/forms/PotEditors";
-import { useFunds } from "@/lib/funds";
+import { moveOntoFund, useFunds } from "@/lib/funds";
 import { Button, Card, CardTitle, Empty, IconButton, Input, Segmented, Stat, Tag, toast, useContextMenu } from "@/components/ui";
 import { BarList, ColumnChart, Legend, LineChart } from "@/components/charts";
 import { useList, useRecords } from "@/store/records";
@@ -147,6 +147,18 @@ export default function Money() {
     toast(l.length === 1 ? "Entry deleted" : `Deleted ${l.length}`, { action: { label: "Undo", run: () => before.forEach((b) => useRecords.getState().restore(b)) } });
   };
   const duplicate = (r: Rec<"money">) => edit("money", null, { ...r.data, date: today });
+  // bought with someone's money but noted as yours: onto their hisaab (every spending row picked, when
+  // this one is among them)
+  const putOnFund = (fund: Rec<"fund">, r: Rec<"money">) => {
+    const l = nav.selected.has(r.id) && nav.selected.size > 1 ? rows.filter((x) => nav.selected.has(x.id) && x.data.type === "expense") : [r];
+    const undo = moveOntoFund(
+      fund.id,
+      l.map((x) => x.id),
+    );
+    nav.clear();
+    const what = l.length === 1 ? l[0].data.note || l[0].data.category : `${l.length} entries`;
+    toast.undo(`${what} on ${fund.data.from || "their"}'s hisaab now`, undo);
+  };
   const noteBill = (b: (typeof bills)[number]) => {
     const d = b.latest.data;
     useRecords.getState().create("money", { ...d, date: billDay(b, month) });
@@ -363,6 +375,7 @@ export default function Money() {
                                     { label: "Same again today", icon: Copy, onSelect: () => duplicate(r) },
                                     { label: r.data.recurring === "monthly" ? "Not every month" : "Every month", icon: Repeat, onSelect: () => useRecords.getState().update<"money">(r.id, { recurring: r.data.recurring === "monthly" ? null : "monthly" }) },
                                     { label: `Only ${r.data.category}`, icon: Filter, onSelect: () => setCat(r.data.category) },
+                                    ...(inc ? [] : funds.open.slice(0, 3).map((f) => ({ label: `Put on ${f.fund.data.from || "their"}'s hisaab`, icon: HandCoins, onSelect: () => putOnFund(f.fund, r) }))),
                                     { type: "separator" },
                                     { label: "Delete", icon: Trash2, danger: true, onSelect: () => remove([r]) },
                                   ])

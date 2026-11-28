@@ -733,4 +733,30 @@ ok("a spoken yes or no to 'shall I save it?', in English, Roman Urdu and Urdu; a
   for (const x of ["No", "no no", "cancel", "nahi", "Nahin, rehne do", "mat karo", "نہیں", "don't save", "never mind"]) assert.strictEqual(c.spokenAnswer(x), "no", x);
   for (const m of ["make it thirty thousand", "haan but not the bread", "nahi, 30 hazaar thi", "and eggs too", "", "yes and add milk to the list for tomorrow please", "what is the time"]) assert.strictEqual(c.spokenAnswer(m), null, m);
 });
+ok("a hisaab: what you bought yesterday with your own money, put on it afterwards", () => {
+  const fund = { id: "f1", data: { from: "Mother", purpose: "Groceries", amount: 5000, date: "2026-11-28", moves: [] } };
+  const m = (id, data) => ({ id, created_at: 1, data: Object.assign({ type: "expense", currency: "PKR", date: "2026-11-27" }, data) });
+  const money = [
+    m("roti", { amount: 250, category: "Groceries", note: "bari wali double roti" }),
+    m("anday", { amount: 600, category: "Groceries", note: "anday", pot_id: "pP" }),
+    m("dahi", { amount: 680, category: "Groceries", note: "dahi" }),
+    m("bill", { amount: 9000, category: "Bills & utilities", date: "2026-11-27", recurring: "monthly" }),
+    m("week", { amount: 3600, category: "Groceries", note: "the weekly shop", date: "2026-11-20" }),
+    m("old", { amount: 100, category: "Groceries", date: "2026-11-01" }),
+    m("theirs", { amount: 50, category: "Groceries", paid_from: "f2" }),
+    m("pay", { type: "income", amount: 1000, category: "Salary" }),
+  ];
+  const cand = c.fundCandidates(fund, money, { today: "2026-11-28" });
+  assert.deepStrictEqual(cand.map((x) => [x.rec.id, x.likely]), [["roti", true], ["anday", true], ["dahi", true], ["week", true], ["bill", false]], "two weeks back, on no hisaab, groceries first");
+  assert.deepStrictEqual(cand.filter((x) => x.recent).map((x) => x.rec.id), ["roti", "anday", "dahi"], "tick them all: yesterday's groceries, not last week's shop");
+  const moved = money.map((x) => (["roti", "anday", "dahi"].includes(x.id) ? Object.assign({}, x, { data: c.onFund(x.data, "f1") }) : x));
+  assert.strictEqual(moved[1].data.pot_id, null, "their money is in no pot");
+  const s = c.fundSummary(fund, moved);
+  assert.deepStrictEqual([s.spent, s.left, s.state], [1530, 3470, "holding"]);
+  assert.strictEqual(c.fundStanding(fund, s, "PKR"), "Rs 3,470 left with you");
+  assert.strictEqual(c.monthTotals(c.ownMoney(moved), "2026-11", "PKR").spent, 12700, "off your own spending");
+  assert.strictEqual(c.fundAfter(fund, c.fundSummary(fund, money), 1530, "PKR"), "leaves Rs 3,470 with you");
+  assert.strictEqual(c.fundAfter(fund, c.fundSummary(fund, money), 6000, "PKR"), "Mother would owe you Rs 1,000");
+  assert.strictEqual(c.onFund(moved[0].data, null).paid_from, null, "and back as your own");
+});
 console.log(`core: ${n} checks passed`);

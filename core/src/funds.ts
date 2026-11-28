@@ -3,6 +3,7 @@
 // what they owe you, and the hisaab to give them. Pure, so it's tested here once.
 import { EXPENSE_CATEGORIES, type FundData, type FundMove, type FundMoveType, type ItemData, type MoneyData } from "./kinds";
 import { shortDate, money as moneyWord } from "./format";
+import { addDays } from "./dates";
 
 type R<D> = { id: string; data: D; created_at?: number };
 
@@ -142,3 +143,37 @@ export function openFunds<F extends R<FundData>, M extends Mo, I extends It>(fun
 
 // your own money: what you spent out of someone else's money left out
 export const ownMoney = <M extends { data: MoneyData }>(money: M[]): M[] => money.filter((m) => !m.data.paid_from);
+
+// What you may already have bought with their money, paid for as your own: your expenses from two
+// weeks before they gave it until today, on no hisaab, newest first. likely: the same category as
+// what the money is for (Groceries for groceries money), shown first. recent: likely, and from the
+// day before they gave it on (yesterday's groceries for money given today): what "tick them all" ticks.
+export function fundCandidates<M extends Mo>(fund: R<FundData>, money: M[], opts: { today: string; days?: number }): { rec: M; likely: boolean; recent: boolean }[] {
+  const given = fund.data.date || opts.today;
+  const from = addDays(given, -(opts.days ?? 14));
+  const near = addDays(given, -1);
+  const cat = fundCategory(fund);
+  return money
+    .filter((m) => m.data.type === "expense" && !m.data.paid_from && m.data.date >= from && m.data.date <= opts.today)
+    .map((rec) => {
+      const likely = rec.data.category === cat;
+      return { rec, likely, recent: likely && rec.data.date >= near };
+    })
+    .sort((a, b) => Number(b.likely) - Number(a.likely) || b.rec.data.date.localeCompare(a.rec.data.date) || (b.rec.created_at || 0) - (a.rec.created_at || 0));
+}
+
+// What an expense's data becomes on a hisaab (off your spending and out of any pot: their money
+// is never in a pot, nor a monthly bill of yours), or back as your own (fundId null).
+export function onFund(data: MoneyData, fundId: string | null): MoneyData {
+  if (!fundId) return Object.assign({}, data, { paid_from: null });
+  return Object.assign({}, data, { paid_from: fundId, pot_id: null, split: undefined, recurring: null });
+}
+
+// what's left (or owed) once those amounts are on it, in words for before you save
+export function fundAfter(fund: { data: FundData }, s: FundSummary<Mo, It>, adding: number, currency: string): string {
+  const cur = fund.data.currency || currency;
+  const left = round(s.left - adding);
+  if (left > 0) return `leaves ${moneyWord(left, cur)} with you`;
+  if (left < 0) return `${fund.data.from || "they"} would owe you ${moneyWord(-left, cur)}`;
+  return "uses all of it";
+}

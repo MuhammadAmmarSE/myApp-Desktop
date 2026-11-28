@@ -1,7 +1,7 @@
 // Money someone gave you to spend for them (a hisaab): the sums come from core (fundSummary), these
 // are the computer's changes to it (the same as the phone's). Every change goes through the record store and can be undone.
 import { useMemo } from "react";
-import { fundCategory, fundSummary, isoDate, withMove, type FundData, type FundMove, type FundMoveType, type FundSummary, type Rec } from "@myapp/core";
+import { fundCategory, fundSummary, isoDate, onFund, withMove, type FundData, type FundMove, type FundMoveType, type FundSummary, type Rec } from "@myapp/core";
 import { useList, useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 
@@ -117,5 +117,46 @@ export function removeSpend(m: Rec<"money">): () => void {
     const st = useRecords.getState();
     st.restore(m);
     if (item) st.update<"item">(item.id, { money_id: m.id, price: item.data.price });
+  };
+}
+
+// things you bought with their money but noted as your own (before they gave it, or before the
+// hisaab was made): onto the hisaab, off your spending (and out of any pot). Returns what undoes it.
+export function moveOntoFund(fundId: string, ids: string[]): () => void {
+  const s = useRecords.getState();
+  const before: { id: string; data: Rec<"money">["data"] }[] = [];
+  const items: { id: string; fund_id: string | null | undefined }[] = [];
+  for (const id of ids) {
+    const m = s.byId[id] as unknown as Rec<"money"> | undefined;
+    if (!m || m.deleted || m.kind !== "money" || m.data.paid_from) continue;
+    before.push({ id, data: m.data });
+    s.update<"money">(id, () => onFund(m.data, fundId));
+    const item = s.lists.item.find((i) => i.data.money_id === id);
+    if (item) {
+      items.push({ id: item.id, fund_id: item.data.fund_id });
+      s.update<"item">(item.id, { fund_id: fundId });
+    }
+  }
+  reopenIfOwed(fundId);
+  return () => {
+    const st = useRecords.getState();
+    for (const b of before) st.update<"money">(b.id, () => b.data);
+    for (const i of items) st.update<"item">(i.id, { fund_id: i.fund_id ?? null });
+  };
+}
+
+// a purchase on a hisaab that was really your own: back into your spending
+export function takeOffFund(m: Rec<"money">): () => void {
+  const s = useRecords.getState();
+  const fundId = m.data.paid_from;
+  const before = m.data;
+  s.update<"money">(m.id, () => onFund(before, null));
+  const item = s.lists.item.find((i) => i.data.money_id === m.id && i.data.fund_id === fundId);
+  if (item) s.update<"item">(item.id, { fund_id: null });
+  if (fundId) reopenIfOwed(fundId);
+  return () => {
+    const st = useRecords.getState();
+    st.update<"money">(m.id, () => before);
+    if (item) st.update<"item">(item.id, { fund_id: fundId || null });
   };
 }

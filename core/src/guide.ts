@@ -144,6 +144,7 @@ export const FEATURES: Feature[] = [
     how: [
       'Capture it in words ("Mother gave me 5000 for groceries: milk, eggs, flour"): the money and the items land together, the items on your list marked as theirs.',
       "Mark an item bought with its price, or add a purchase on the hisaab page: it comes off what they gave.",
+      'Bought something with their money but noted it as yours (yesterday, before they gave it)? On the hisaab page, "Put what you already bought on it", tick it (one tap ticks the recent ones) and it moves off your spending onto their hisaab; or hold it in Money (right-click on the computer) and pick their hisaab. "Make it my own spending" moves one back.',
       "At the end: give back what's left, or keep it as your income; if you spent more, they pay you back later, or you cover it as your own spending.",
       "Share the hisaab: every purchase with its day, what was left or owed, and how it was settled, as a message.",
       "They gave more: add it to the same hisaab.",

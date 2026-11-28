@@ -10,7 +10,7 @@ vi.mock("@/lib/bridge", () => ({
 }));
 
 const { useRecords } = await import("@/store/records");
-const { addMove, removeFund, removeMove, removeSpend } = await import("@/lib/funds");
+const { addMove, moveOntoFund, removeFund, removeMove, removeSpend, takeOffFund } = await import("@/lib/funds");
 
 const st = () => useRecords.getState();
 const live = <K extends "money" | "item" | "fund">(k: K) => st().lists[k] as Rec<K>[];
@@ -73,5 +73,37 @@ describe("a hisaab", () => {
     expect(live("fund")).toHaveLength(1);
     expect(summary(fund.id).spent).toBe(4200);
     expect(summary(fund.id).toBuy.map((i) => i.id)).toEqual([item.id]);
+  });
+  it("what you bought with her money yesterday but noted as yours, put on it afterwards; undo, and back to yours", () => {
+    const st$ = st();
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    // a fresh hisaab: Mother gave 5,000 today; bread, eggs and yogurt bought yesterday as my own
+    const given = st$.create("fund", { from: "Mother", purpose: "Groceries", amount: 5000, currency: "PKR", date: today, moves: [], closed: false });
+    const bread = st$.create("money", { type: "expense", amount: 250, currency: "PKR", category: "Groceries", note: "Bread", date: yesterday });
+    const eggs = st$.create("money", { type: "expense", amount: 600, currency: "PKR", category: "Groceries", note: "Eggs", date: yesterday });
+    const yogurt = st$.create("money", { type: "expense", amount: 680, currency: "PKR", category: "Groceries", note: "Yogurt", date: yesterday });
+    const item = st$.create("item", { name: "Eggs", list: "grocery", mode: "store", today: true, done: true, money_id: eggs.id, price: 600 });
+    const spentBefore = monthTotals(live("money"), yesterday.slice(0, 7), "PKR").spent;
+    const undo = moveOntoFund(given.id, [bread.id, eggs.id, yogurt.id]);
+    expect(summary(given.id).spent).toBe(1530);
+    expect(summary(given.id).left).toBe(3470);
+    expect(monthTotals(live("money"), yesterday.slice(0, 7), "PKR").spent).toBe(spentBefore - 1530);
+    expect((st().byId[item.id] as Rec<"item">).data.fund_id).toBe(given.id);
+    undo();
+    expect(summary(given.id).spent).toBe(0);
+    expect((st().byId[item.id] as Rec<"item">).data.fund_id ?? null).toBeNull();
+    moveOntoFund(given.id, [bread.id, eggs.id, yogurt.id]);
+    // the yogurt was mine after all
+    const back = takeOffFund(st().byId[yogurt.id] as Rec<"money">);
+    expect(summary(given.id).left).toBe(4150);
+    back();
+    expect(summary(given.id).left).toBe(3470);
+  });
+  it("a settled hisaab opens again when something is put on it", () => {
+    addMove(fund.id, "returned", 800);
+    expect((st().byId[fund.id] as Rec<"fund">).data.closed).toBe(true);
+    const fuel = live("money").find((m) => m.data.category === "Fuel")!;
+    moveOntoFund(fund.id, [fuel.id]);
+    expect((st().byId[fund.id] as Rec<"fund">).data.closed).toBe(false);
   });
 });

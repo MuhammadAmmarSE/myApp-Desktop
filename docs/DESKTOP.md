@@ -148,6 +148,12 @@ the server; Quick capture's window doesn't keep records, so it sends drafts with
 (`ref`) that the main window swaps for the real ones as it makes them, and "they gave more" as a
 `fund_more` draft (App.tsx `handleCommand`).
 
+Something bought with their money but noted as your own: the page's "Put what you already bought
+on it" (P) opens `components/forms/FundAttach.tsx` (core's `fundCandidates` and `fundAfter`; the
+recent ones ticked in one click) and `moveOntoFund` moves the ticked ones. Money's row context
+menu offers each open hisaab for that row, or for every picked row when it's one of them; a
+purchase's context menu on the page has "Make it my own spending" (`takeOffFund`).
+
 ## Pots (`pages/Pot.tsx`, `lib/pots.ts`, `components/forms/PotEditors.tsx`, core's `pots.ts`)
 
 Envelope budgeting, the same as the phone's (myApp's docs/ARCHITECTURE.md → Pots): a `pot` record

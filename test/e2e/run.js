@@ -380,6 +380,52 @@ async function scenario(name, fn, always = false) {
     for (const line of ["Atta", "Rice and oil", "Eggs", "Total spent: Rs 5,300", "Spent over: Rs 300", "Paid back to me", "Settled."]) if (!text.includes(line)) throw new Error(`the hisaab doesn't say "${line}":\n${text}`);
   });
 
+  await scenario("hisaab: what you already bought with her money, put on it afterwards (from the hisaab, and from Money); one was yours after all", async () => {
+    const spend = async (amount, what) => {
+      await go("/money");
+      await win.getByRole("button", { name: "Expense" }).click();
+      await dialog().getByLabel("Amount").fill(amount);
+      await field("What for").fill(what);
+      await dialog().getByRole("button", { name: "Groceries", exact: true }).click();
+      await saveDialog();
+      return until(`${what} on the server`, async () => (await live("money")).find((r) => r.data.note === what && !r.data.paid_from));
+    };
+    // groceries noted as my own spending, then my sister gives me 5,000 for them
+    const bread = await spend("250", "Bread");
+    const yogurt = await spend("680", "Yogurt");
+    await win.getByRole("button", { name: "Someone gave me money to spend" }).click();
+    await dialog().getByLabel("How much they gave").fill("5000");
+    await dialog().getByLabel("Who gave it").fill("Sister");
+    await dialog().getByRole("button", { name: "Groceries", exact: true }).click();
+    await saveDialog();
+    const fund = await until("her hisaab on the server", async () => (await live("fund")).find((r) => r.data.from === "Sister" && r.data.amount === 5000));
+    await go("/money");
+    await win.getByTestId("held-for-others").getByText("Groceries · from Sister").click();
+    await win.getByTestId("fund").waitFor();
+    // the hisaab offers them; ticking says what will be left
+    await win.getByTestId("attach-open").click();
+    await dialog().getByRole("checkbox", { name: /^Bread, / }).click();
+    await dialog().getByRole("checkbox", { name: /^Yogurt, / }).click();
+    await dialog().getByTestId("attach-after").getByText("Rs 930 from Sister's money: leaves Rs 4,070 with you").waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "hisaab-attach.png") });
+    await dialog().getByRole("button", { name: "Put 2 on Sister's hisaab" }).click();
+    await until("both on her hisaab", async () => (await live("money")).filter((r) => r.data.paid_from === fund.id && [bread.id, yogurt.id].includes(r.id)).length === 2);
+    await win.getByTestId("fund-standing").getByText("Rs 4,070", { exact: true }).waitFor();
+    // milk, from Money: right-click it and put it on her hisaab
+    const milk = await spend("300", "Milk");
+    await win.getByTestId("money-rows").getByText("Milk").click({ button: "right" });
+    await win.getByRole("menuitem", { name: "Put on Sister's hisaab" }).click();
+    await until("the milk on her hisaab", async () => (await live("money")).find((r) => r.id === milk.id && r.data.paid_from === fund.id));
+    await win.getByTestId("held-for-others").getByText(/3,770 left with you/).waitFor();
+    if (await win.getByTestId("money-rows").getByText("Bread").count()) throw new Error("her purchase still listed as mine");
+    // the milk was mine after all: off her hisaab, back in my spending
+    await win.getByTestId("held-for-others").getByText("Groceries · from Sister").click();
+    await win.getByTestId("fund-spends").getByText("Milk").click({ button: "right" });
+    await win.getByRole("menuitem", { name: "Make it my own spending" }).click();
+    await until("the milk mine again", async () => (await live("money")).find((r) => r.id === milk.id && !r.data.paid_from));
+    await win.getByTestId("fund-standing").getByText("Rs 4,070", { exact: true }).waitFor();
+  });
+
   await scenario("pots: an income given jobs, spending out of a pot, money moved and taken back, and pots from Capture", async () => {
     await go("/money");
     const pots = win.getByTestId("pots");
