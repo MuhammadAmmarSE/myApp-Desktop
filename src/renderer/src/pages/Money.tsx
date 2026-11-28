@@ -6,7 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { ArrowDownLeft, ArrowUpRight, CalendarRange, ChevronLeft, ChevronRight, Copy, Download, Filter, Gauge, HandCoins, Pencil, PiggyBank, Plus, Receipt, Repeat, Search, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
-import { fundStanding, isoDate, monthTotals, ownMoney, type Rec } from "@myapp/core";
+import { fundStanding, isoDate, monthJobs, monthTotals, ownMoney, potStanding, POT_503020, POT_STARTERS, type Rec } from "@myapp/core";
+import { createPot, potVar, usePots } from "@/lib/pots";
+import { JobsBar, PotMark, PotMeter, POT_ICON } from "@/components/forms/PotEditors";
 import { useFunds } from "@/lib/funds";
 import { Button, Card, CardTitle, Empty, IconButton, Input, Segmented, Stat, Tag, toast, useContextMenu } from "@/components/ui";
 import { BarList, ColumnChart, Legend, LineChart } from "@/components/charts";
@@ -41,6 +43,16 @@ export default function Money() {
     setQuery({ add: null });
     edit("fund");
   }, [addFund]);
+  // opened to make a pot (Search: "New pot")
+  const addPot = q.get("add") === "pot";
+  useEffect(() => {
+    if (!addPot) return;
+    setQuery({ add: null });
+    edit("pot");
+  }, [addPot]);
+  const pots = usePots();
+  const [showAway, setShowAway] = useState(false);
+  const potName = (id?: string | null) => (id ? pots.byId.get(id)?.pot.data.name : undefined);
   const currency = useSettings((s) => s.currency);
   const view = useSettings((s) => s.moneyView);
   const set = useSettings((s) => s.set);
@@ -48,6 +60,15 @@ export default function Money() {
   const thisMonth = today.slice(0, 7);
   const month = /^\d{4}-\d{2}$/.test(q.get("month") || "") ? q.get("month")! : thisMonth;
   const year = Number(month.slice(0, 4));
+  // where the month's money went, by pot (only once there are pots)
+  const jobs = useMemo(() => (pots.all.length ? monthJobs(everything, pots.all, month, currency) : null), [pots.all, everything, month, currency]);
+  // the starter pots you haven't made yet
+  const starters = POT_STARTERS.filter((x) => !pots.all.some((p) => p.data.name.toLowerCase() === x.name.toLowerCase()));
+  const starter = (list: { name: string; type: (typeof POT_STARTERS)[number]["type"]; rule?: (typeof POT_STARTERS)[number]["rule"] }[]) => {
+    const have = new Set(pots.all.map((p) => p.data.name.toLowerCase()));
+    const made = list.filter((x) => !have.has(x.name.toLowerCase())).map((x) => createPot({ name: x.name, type: x.type, rule: x.rule || null }));
+    if (made.length) toast.success(made.length === 1 ? `Made the pot ${made[0].data.name}` : `Made ${made.length} pots`);
+  };
   const [kind, setKind] = useState<Kind>("all");
   const [cat, setCat] = useState<string | null>(null);
   const [text, setText] = useState("");
@@ -354,6 +375,18 @@ export default function Money() {
                                     <span className="truncate">{r.data.note || r.data.category}</span>
                                     {r.data.recurring === "monthly" && <Repeat size={12} className="shrink-0 text-text3" aria-label="Every month" />}
                                   </div>
+                                  {!inc && potName(r.data.pot_id) ? (
+                                    <span className="mt-0.5 flex items-center gap-1 text-[11px] text-text3" data-pot-of={r.data.pot_id}>
+                                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: potVar(pots.byId.get(r.data.pot_id!)?.pot) }} /> from {potName(r.data.pot_id)}
+                                    </span>
+                                  ) : inc && r.data.split && r.data.split.length ? (
+                                    <span className="mt-0.5 flex items-center gap-1 text-[11px] text-text3">
+                                      {r.data.split.slice(0, 4).map((x) => (
+                                        <span key={x.pot_id} className="h-1.5 w-1.5 rounded-full" style={{ background: potVar(pots.byId.get(x.pot_id)?.pot) }} />
+                                      ))}{" "}
+                                      {r.data.split.length === 1 ? `into ${potName(r.data.split[0].pot_id) || "a pot"}` : `into ${r.data.split.length} pots`}
+                                    </span>
+                                  ) : null}
                                 </td>
                                 <td className="px-2 py-2">
                                   <Tag>{r.data.category}</Tag>
@@ -387,6 +420,81 @@ export default function Money() {
           </div>
 
           <div className="flex min-w-0 flex-col gap-5">
+            {/* pots: your own money given jobs */}
+            <motion.div {...rise(6)}>
+              <Card data-testid="pots">
+                <CardTitle
+                  title="Pots"
+                  icon={PiggyBank}
+                  sub={pots.rows.length ? `${pots.rows.length} in use` : "Give your money jobs"}
+                  action={
+                    pots.rows.length ? (
+                      <Button size="xs" variant="ghost" icon={Plus} onClick={() => edit("pot")}>
+                        New pot
+                      </Button>
+                    ) : undefined
+                  }
+                />
+                {pots.rows.length ? (
+                  <div className="-mx-2 flex flex-col">
+                    {pots.rows.map((r) => (
+                      <PotLine key={r.pot.id} row={r} currency={currency} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-[12.5px] leading-[1.5] text-text2">Split what you earn into pots, like Personal, Bills or a loan, and spend from them. Your totals stay the same; each pot keeps what&apos;s in it from month to month.</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {POT_STARTERS.map((x) => (
+                        <StarterChip key={x.name} name={x.name} type={x.type} onClick={() => starter([x])} />
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" icon={Plus} onClick={() => edit("pot")} className="flex-1">
+                        Make my own
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => starter(POT_503020)} className="flex-1" title="Needs 50%, Wants 30%, Savings 20% of each income">
+                        50/30/20 split
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {pots.rows.length > 0 && pots.rows.length < 6 && starters.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[12px] text-text3">Add:</span>
+                    {starters.map((x) => (
+                      <StarterChip key={x.name} name={x.name} type={x.type} onClick={() => starter([x])} />
+                    ))}
+                  </div>
+                )}
+                {pots.away.length > 0 && (
+                  <>
+                    <Button size="xs" variant="ghost" className="mt-2" onClick={() => setShowAway(!showAway)}>
+                      {showAway ? "Hide pots put away" : `Pots put away (${pots.away.length})`}
+                    </Button>
+                    {showAway && (
+                      <div className="-mx-2 flex flex-col opacity-75">
+                        {pots.away.map((r) => (
+                          <PotLine key={r.pot.id} row={r} currency={currency} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {jobs && jobs.earned > 0 && (
+                  <div className="mt-4 border-t border-line pt-3.5">
+                    <div className="mb-2.5 text-[12.5px] font-semibold">Where {monthTitle(month)}&apos;s money went</div>
+                    <JobsBar jobs={jobs} rows={pots.byId} currency={currency} />
+                    {(jobs.notInPot > 0 || jobs.spentNoPot > 0) && (
+                      <div className="mt-2 text-[11.5px] leading-[1.45] text-text3">
+                        Of the money not in a pot, {money(jobs.spentNoPot, currency)} was spent from no pot: {money(jobs.freeLeft, currency)} left of it.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            </motion.div>
+
             {/* money someone gave you to spend: never your own, kept apart */}
             <motion.div {...rise(6)}>
               <Card data-testid="held-for-others">
@@ -502,5 +610,33 @@ export default function Money() {
         </div>
       </div>
     </div>
+  );
+}
+
+// one pot on the Money page: what's in it, how far along, where it stands
+function PotLine({ row, currency }: { row: ReturnType<typeof usePots>["rows"][number]; currency: string }) {
+  const { pot, summary: s } = row;
+  const cur = pot.data.currency || currency;
+  return (
+    <button type="button" onClick={() => navigate(`/pots/${pot.id}`)} className="flex items-center gap-3 rounded-[10px] px-2 py-2 text-left hover:bg-hover" data-pot={pot.id} aria-label={`${pot.data.name}: ${potStanding(pot, s, currency)}`}>
+      <PotMark pot={pot} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[13px]">{pot.data.name}</span>
+          <span className={clsx("shrink-0 text-[13px] font-medium tnum", s.over && "text-danger")}>{(s.over ? "−" : "") + money(Math.abs(s.balance), cur)}</span>
+        </span>
+        <PotMeter row={row} className="my-1" />
+        <span className="block truncate text-[11.5px] text-text3">{potStanding(pot, s, currency)}</span>
+      </span>
+    </button>
+  );
+}
+
+function StarterChip({ name, type, onClick }: { name: string; type: keyof typeof POT_ICON; onClick: () => void }) {
+  const Icon = POT_ICON[type];
+  return (
+    <button type="button" onClick={onClick} aria-label={`Make the pot ${name}`} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface2 px-3 text-[12.5px] text-text2 transition-colors hover:bg-hover hover:text-text">
+      <Icon size={13} className="text-accent-text" /> {name}
+    </button>
   );
 }

@@ -40,6 +40,7 @@ export const GROUP_WORD: Record<Group, string> = {
   media: "Games, books & shows",
   wish: "Wishlist",
   fund: "Money given to you to spend",
+  pot: "Pots",
   memory: "What the assistant remembers",
 };
 export const GROUP_ORDER: Group[] = [
@@ -66,6 +67,7 @@ export const GROUP_ORDER: Group[] = [
   "word",
   "media",
   "wish",
+  "pot",
   "fund",
   "memory",
 ];
@@ -103,6 +105,7 @@ export function commands(mod = "Ctrl"): Entry[] {
     act("expense", "Add an expense", "spent money paid create", { edit: "money" }, "Action", `${mod} Shift E`),
     act("income", "Add income", "earned salary money received", { edit: "money", preset: { type: "income" } }),
     act("fund", "Someone gave me money to spend", "hisaab mother gave money groceries spend for them account owe", { to: "/money?add=fund" }),
+    act("pot", "New pot", "pots envelope budget jobs split income personal loan savings bills goal", { to: "/money?add=pot" }),
     act("event", "Add an event", "calendar meeting appointment create", { edit: "event" }),
     act("reminder", "Set a reminder", "remind alert ring create", { edit: "reminder" }),
     act("note", "New note", "write create", { to: "/notes/new" }, "Action", `${mod} Shift N`),
@@ -211,6 +214,17 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       keywords: `${m.data.type} ${m.data.amount}`,
       detail: `${m.data.type === "income" ? "Earned" : "Spent"} ${money(m.data.amount, m.data.currency || ctx.currency)} · ${shortDate(m.data.date, today)}${m.data.paid_from ? " · on a hisaab" : ""}`,
       open: m.data.paid_from ? { to: `/funds/${m.data.paid_from}` } : { edit: "money", rec: m },
+    });
+  for (const p of lists.pot || [])
+    out.push({
+      id: p.id,
+      kind: "pot",
+      group: "pot",
+      title: p.data.name,
+      body: p.data.notes,
+      keywords: `pot ${p.data.type} budget envelope`,
+      detail: `${p.data.type === "spend" ? "Spending" : p.data.type === "bills" ? "Bills" : p.data.type === "save" ? "Saving" : "Paying off"} pot${p.data.archived ? " · put away" : ""}`,
+      open: { to: `/pots/${p.id}` },
     });
   for (const f of lists.fund || [])
     out.push({

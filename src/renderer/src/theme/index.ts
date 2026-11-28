@@ -1,7 +1,7 @@
 // The current theme, applied as CSS variables on <html>: every colour on screen reads them. Themes
 // are core's (the same six as the phone); glass and the Aurora's colours are worked out from them.
 import { useEffect } from "react";
-import { themeById, type Theme } from "@myapp/core";
+import { POT_COLORS, themeById, type Theme } from "@myapp/core";
 import { useSettings, type Background } from "@/store/settings";
 import { useLightEffects } from "@/lib/effects";
 
@@ -53,6 +53,11 @@ export function themeVars(theme: Theme, background: Background, light = false): 
   vars["--viz-2"] = viz.earned;
   vars["--viz-grid"] = dark ? "rgba(255,255,255,0.07)" : "rgba(10,10,30,0.08)";
   vars["--viz-axis"] = dark ? "rgba(255,255,255,0.2)" : "rgba(10,10,30,0.22)";
+  // pots: core's palette for this kind of theme (checked for colour-blind separation on its cards)
+  POT_COLORS[dark ? "dark" : "light"].forEach((col, i) => {
+    vars[`--pot-${i}`] = col;
+    vars[`--pot-${i}-soft`] = withAlpha(col, dark ? 0.18 : 0.14);
+  });
   return vars;
 }
 

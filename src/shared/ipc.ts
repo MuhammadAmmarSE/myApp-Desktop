@@ -97,10 +97,13 @@ export interface QuickContext {
   people: { id: string; name: string; relation: string }[];
   // hisaabs still open (money someone gave you to spend)
   funds: { id: string; from: string; purpose: string; left: number }[];
+  // your pots (rule: income is split into it by a rule); an older main window sends none
+  pots?: { id: string; name: string; type: "spend" | "bills" | "save" | "debt"; balance: number; rule?: boolean }[];
 }
 
 // a record for the main window to make. ref: a stand-in id other drafts in the same batch may point
-// at (fund_id, paid_from); kind "fund_more" adds money to a hisaab you have: data { fund_id, move }
+// at (fund_id, paid_from, pot_id, a split's pots); kind "fund_more" adds money to a hisaab you have:
+// data { fund_id, move }; kind "pot_move" moves money between pots: data { pot_id, move }
 export type Draft = { kind: string; data: any; ref?: string };
 
 // a command from the tray, the menu, a notification or the quick window, for the main window

@@ -380,6 +380,81 @@ async function scenario(name, fn, always = false) {
     for (const line of ["Atta", "Rice and oil", "Eggs", "Total spent: Rs 5,300", "Spent over: Rs 300", "Paid back to me", "Settled."]) if (!text.includes(line)) throw new Error(`the hisaab doesn't say "${line}":\n${text}`);
   });
 
+  await scenario("pots: an income given jobs, spending out of a pot, money moved and taken back, and pots from Capture", async () => {
+    await go("/money");
+    const pots = win.getByTestId("pots");
+    await pots.getByRole("button", { name: "Make the pot Personal" }).click();
+    const personal = await until("Personal on the server", async () => (await live("pot")).find((r) => r.data.name === "Personal" && r.data.type === "spend"));
+    // after the first pot the other starters are still offered
+    await pots.getByRole("button", { name: "Make the pot Loan" }).click();
+    const loan = await until("Loan on the server", async () => (await live("pot")).find((r) => r.data.name === "Loan" && r.data.type === "debt"));
+    if (personal.data.color === loan.data.color) throw new Error("two pots share a colour");
+    // earned 300,000: 100,000 for personal spending, 100,000 towards the loan, the rest not in a pot
+    await win.getByRole("button", { name: "Money in", exact: true }).click();
+    await dialog().getByLabel("Amount").fill("300000");
+    await dialog().getByRole("button", { name: "Salary", exact: true }).click();
+    await dialog().getByLabel("Into Personal").fill("100000");
+    await dialog().getByLabel("Into Loan").fill("100000");
+    await dialog().getByText("Rs 100,000 not in a pot").waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "pots-split.png") });
+    await saveDialog();
+    await until("the income split on the server", async () =>
+      (await live("money")).find((r) => r.data.type === "income" && r.data.amount === 300000 && (r.data.split || []).length === 2 && r.data.split.every((x) => x.amount === 100000)),
+    );
+    await pots.locator(`[data-pot="${personal.id}"]`).getByText("Rs 100,000").first().waitFor();
+    // spending out of Personal
+    await win.getByRole("button", { name: "Expense", exact: true }).click();
+    await dialog().getByLabel("Amount").fill("25000");
+    await dialog().getByRole("button", { name: "Food & dining", exact: true }).click();
+    await field("What for").fill("Dinner out");
+    await dialog().getByRole("button", { name: /^Personal, Rs 100,000/ }).click();
+    await saveDialog();
+    await until("the dinner out of Personal", async () => (await live("money")).find((r) => r.data.note === "Dinner out" && r.data.pot_id === personal.id));
+    await win.getByTestId("money-rows").locator(`[data-pot-of="${personal.id}"]`).first().waitFor();
+    // the next dinner suggests the same pot
+    await win.getByRole("button", { name: "Expense", exact: true }).click();
+    await dialog().getByRole("button", { name: "Food & dining", exact: true }).click();
+    await field("What for").fill("Dinner out");
+    await dialog().getByText("Picked from what you did before.").waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "pots-picker.png") });
+    await win.keyboard.press("Escape");
+    await dialog().waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+    // the pot's page: move 10,000 to the loan, then take it back
+    await pots.locator(`[data-pot="${personal.id}"]`).click();
+    await win.getByTestId("pot").waitFor();
+    await win.getByTestId("pot-balance").getByText("Rs 75,000").waitFor();
+    await win.getByRole("button", { name: /^Move out/ }).click();
+    await dialog().getByLabel("Amount").fill("10000");
+    await dialog().getByRole("button", { name: /^Loan ·/ }).click();
+    await saveDialog();
+    await until("the move on the server", async () => (await live("pot")).find((r) => r.id === personal.id && (r.data.moves || []).some((m) => m.dir === "out" && m.other === loan.id && m.amount === 10000)));
+    await win.getByTestId("pot-balance").getByText("Rs 65,000").waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "pot-page.png") });
+    const moved = win.locator('[data-pot-entry="move_out"]').first();
+    await moved.hover();
+    await moved.getByRole("button", { name: "Take back: To Loan" }).click();
+    await until("the move taken back", async () => (await live("pot")).find((r) => r.id === personal.id && !(r.data.moves || []).length));
+    await win.getByTestId("pot-balance").getByText("Rs 75,000").waitFor();
+    // by words: spending out of a pot, a move, and a new pot with a rule
+    await go("/capture");
+    await win.getByLabel("What to capture").fill("Loan installment 20000 from the loan pot, move 5000 from personal into it, and start a wedding pot");
+    await win.keyboard.press("Control+Enter");
+    await win.getByTestId("review").waitFor({ timeout: 15000 });
+    await win.getByTestId("review").getByText("Personal → Loan").first().waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "pots-capture.png") });
+    await win.getByTestId("save-all").click();
+    await until("the installment out of Loan", async () => (await live("money")).find((r) => r.data.note === "Loan installment" && r.data.pot_id === loan.id && r.data.amount === 20000));
+    await until("5,000 moved to Loan", async () => (await live("pot")).find((r) => r.id === personal.id && (r.data.moves || []).some((m) => m.other === loan.id && m.amount === 5000)));
+    await until("the Wedding pot", async () => (await live("pot")).find((r) => r.data.name === "Wedding" && r.data.type === "save" && r.data.rule && r.data.rule.kind === "percent"));
+    // where the month's money went
+    await go("/money");
+    await win.getByTestId("pot-jobs").waitFor();
+    if (process.env.E2E_SHOTS) {
+      await win.getByTestId("pots").scrollIntoViewIfNeeded();
+      await win.screenshot({ path: path.join(OUT, "pots-money.png") });
+    }
+  });
+
   await scenario("settings: what the assistant remembers, added and forgotten", async () => {
     await go("/settings?section=memory");
     await win.getByLabel("Something to remember").fill("I take chai without sugar");

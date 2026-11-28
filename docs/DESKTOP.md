@@ -148,6 +148,32 @@ the server; Quick capture's window doesn't keep records, so it sends drafts with
 (`ref`) that the main window swaps for the real ones as it makes them, and "they gave more" as a
 `fund_more` draft (App.tsx `handleCommand`).
 
+## Pots (`pages/Pot.tsx`, `lib/pots.ts`, `components/forms/PotEditors.tsx`, core's `pots.ts`)
+
+Envelope budgeting, the same as the phone's (myApp's docs/ARCHITECTURE.md → Pots): a `pot` record
+is part of your own money with a job (spending, bills, saving up, paying off). An income's `split`
+gives some of it to pots, an expense's `pot_id` takes it out of one, and moves between pots (or
+from money not in a pot) are kept on a pot's `moves`. Balances roll over; your totals in Money
+don't change. The sums are core's (`potSummary`, `ruleSplit`, `monthJobs`, `suggestPot`).
+
+- Money: a Pots card (each pot's balance, meter and where it stands; starters and a 50/30/20
+  split to begin; "Add:" for the starters not made yet; pots put away), "Where {month}'s money
+  went" (a bar by pot), and each entry says which pot it came from or went into. `?add=pot`
+  opens a new pot (Search: "New pot").
+- The money editor: "Comes out of" for spending (the pot you used before for the same thing is
+  suggested until you pick; it warns when it takes a pot over) and "Give it jobs" for income
+  (split by your pots' rules as you type the amount, until you change it).
+- A pot's page (`/pots/:id`): Cover it, Add money (A), Move out (M), Spend from it (S), and every
+  entry in and out; a move can be taken back (hover, or right-click).
+- Pot colours are `--pot-0` … `--pot-7` (and `-soft`), set from core's `POT_COLORS` for the
+  theme's mode. Light mode's are below 3:1 against the page, so a pot is always named beside its
+  colour.
+- Capture and Quick capture send the pots to the server and show "pot" / "pot_move" cards; a
+  pot made in the same capture is "new". An income saved from Capture without its own split is
+  split by your rules.
+- Sync: a record the server rejects as "unknown kind" (a server older than this app) stays to be
+  sent again, and Sync says so, instead of being marked as sent and lost.
+
 ## Talking (`lib/listen.ts`, `lib/voiceActivity.ts`, `lib/talk.ts`)
 
 The microphone button (the assistant's message box, Capture, the Quick capture window, and

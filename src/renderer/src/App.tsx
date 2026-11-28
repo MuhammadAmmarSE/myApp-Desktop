@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { actionToRecords, isKind } from "@myapp/core";
 import { talk } from "@/lib/talk";
 import { addMove, useFunds } from "@/lib/funds";
+import { autoSplit, createPot, movePot, usePots } from "@/lib/pots";
 import type { Command } from "@shared/ipc";
 import { useApplyTheme } from "@/theme";
 import { page as pageMotion } from "@/theme/motion";
@@ -45,6 +46,7 @@ const Things = lazy(() => import("@/pages/Things"));
 const Work = lazy(() => import("@/pages/Work"));
 const WorkProject = lazy(() => import("@/pages/WorkProject"));
 const Fund = lazy(() => import("@/pages/Fund"));
+const Pot = lazy(() => import("@/pages/Pot"));
 const Interests = lazy(() => import("@/pages/Interests"));
 const Assistant = lazy(() => import("@/pages/Assistant"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -61,6 +63,7 @@ const ROUTES: [string, ComponentType<{ params: Record<string, string> }>][] = [
   ["/saved", Saved],
   ["/money", Money],
   ["/funds/:id", Fund],
+  ["/pots/:id", Pot],
   ["/people", People],
   ["/car", CarPage],
   ["/things", Things],
@@ -128,10 +131,24 @@ function handleCommand(cmd: Command) {
         n++;
         continue;
       }
+      if (d.kind === "pot_move") {
+        const m = d.data.move || {};
+        const pot = real(d.data.pot_id);
+        const other = m.other == null ? null : real(m.other);
+        if (typeof pot === "string" && Number(m.amount) > 0) void movePot(m.dir === "out" ? pot : null, m.dir === "out" ? (other as string | null) : pot, Number(m.amount), m.note, m.date);
+        n++;
+        continue;
+      }
       if (!isKind(d.kind)) continue;
       const data = { ...d.data };
-      for (const k of ["fund_id", "paid_from", "settles"]) if (k in data) data[k] = real(data[k]) ?? null;
-      const rec = s.create(d.kind, data);
+      for (const k of ["fund_id", "paid_from", "settles", "pot_id"]) if (k in data) data[k] = real(data[k]) ?? null;
+      if (Array.isArray(data.split)) data.split = data.split.map((x: any) => ({ ...x, pot_id: real(x && x.pot_id) })).filter((x: any) => typeof x.pot_id === "string");
+      // an income with no split of its own: split by your pots' rules, as Capture does
+      if (d.kind === "money" && data.type === "income" && !data.paid_from && !(Array.isArray(data.split) && data.split.length)) {
+        const split = autoSplit(Number(data.amount) || 0);
+        if (split.length) data.split = split;
+      }
+      const rec = d.kind === "pot" ? createPot(data) : s.create(d.kind, data);
       if (typeof d.ref === "string") made.set(d.ref, rec.id);
       n++;
     }
@@ -150,6 +167,7 @@ function ShellEffects() {
   const motion = useSettings((s) => s.motion);
   const people = useRecords((s) => s.lists.person);
   const openFunds = useFunds().open;
+  const potRows = usePots().rows;
   useEffect(() => {
     startSync();
     startAlerts();
@@ -163,8 +181,9 @@ function ShellEffects() {
       motion,
       people: people.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })),
       funds: openFunds.map((r) => ({ id: r.fund.id, from: r.fund.data.from, purpose: r.fund.data.purpose, left: r.summary.left })),
+      pots: potRows.map((r) => ({ id: r.pot.id, name: r.pot.data.name, type: r.pot.data.type, balance: r.summary.balance, rule: !!r.pot.data.rule })),
     });
-  }, [currency, themeId, motion, people, openFunds]);
+  }, [currency, themeId, motion, people, openFunds, potRows]);
   // late to-dos on the dock / taskbar
   const late = badges.overdue.tone === "danger" ? badges.overdue.n : 0;
   useEffect(() => bridge.badge(late), [late]);

@@ -19,6 +19,7 @@ import {
   Fuel,
   Gift,
   HandCoins,
+  PiggyBank,
   Brain,
   Globe,
   Handshake,
@@ -71,6 +72,7 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   wish: Gift,
   memory: Brain,
   fund: HandCoins,
+  pot: PiggyBank,
 };
 const READ_ICON: Record<string, LucideIcon> = { find_records: Search, get_records: Search, money_totals: Calculator, my_overview: LayoutList, app_guide: BookOpen };
 
@@ -127,7 +129,7 @@ export function ProposalCard({ runId, step }: { runId: number; step: Step }) {
         {open.length ? <Tag tone="accent">{open.length} to decide</Tag> : <Check size={16} className="text-success" />}
       </div>
       {p.changes.map((ch, i) => {
-        const rec = ch.op === "create" ? null : byId[ch.id];
+        const rec = ch.op === "create" || ch.op === "move" ? null : byId[ch.id];
         const w = describeChange(ch, { currency, current: rec && !rec.deleted ? rec.data : null });
         const Icon = KIND_ICON[ch.kind] || Sparkles;
         const d = decided[i];

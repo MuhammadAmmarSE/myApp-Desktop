@@ -25,6 +25,9 @@ export async function syncNow(): Promise<boolean> {
   let pulled = 0;
   try {
     let pending = dirtyRecords();
+    // records of a kind the server doesn't know yet (it's older than this app): kept here and sent
+    // again once it's updated, never marked as sent
+    let waiting = 0;
     while (pending.length) {
       const batch = pending.slice(0, 200);
       pending = pending.slice(200);
@@ -32,7 +35,9 @@ export async function syncNow(): Promise<boolean> {
       const res = await api<{ accepted: string[]; rejected: { id: string; reason: string }[]; conflicts: Rec[] }>("POST", "/sync", {
         records: batch.map(({ dirty: _d, ...r }) => r),
       });
-      const done = new Set([...res.accepted, ...res.rejected.map((x) => x.id), ...res.conflicts.map((c) => c.id)]);
+      const later = res.rejected.filter((x) => /^unknown kind/i.test(x.reason || ""));
+      waiting += later.length;
+      const done = new Set([...res.accepted, ...res.rejected.filter((x) => !later.includes(x)).map((x) => x.id), ...res.conflicts.map((c) => c.id)]);
       useRecords.getState().markClean(sent.filter((s) => done.has(s.id)));
       if (res.conflicts.length) useRecords.getState().applyRemote(res.conflicts);
     }
@@ -49,7 +54,7 @@ export async function syncNow(): Promise<boolean> {
     }
     const now = Date.now();
     useRecords.getState().setMeta("last_sync", String(now));
-    useSync.setState({ lastAt: now, error: "", offline: false, pulled });
+    useSync.setState({ lastAt: now, error: waiting ? (waiting === 1 ? "1 change waits for your server to be updated (myapp-backend) before it syncs." : `${waiting} changes wait for your server to be updated (myapp-backend) before they sync.`) : "", offline: false, pulled });
     return true;
   } catch (e) {
     const err = e as ApiError;

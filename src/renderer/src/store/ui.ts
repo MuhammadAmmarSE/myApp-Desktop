@@ -25,7 +25,9 @@ export type EditKind =
   | "word"
   | "media"
   | "wish"
-  | "fund";
+  | "fund"
+  | "pot"
+  | "pot_move";
 export type Editing = { kind: EditKind; rec?: Rec | null; preset?: Record<string, any>; n: number };
 
 type UI = {

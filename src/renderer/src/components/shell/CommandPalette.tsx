@@ -36,6 +36,7 @@ import {
   Gift,
   type LucideIcon,
   HandCoins,
+  PiggyBank,
   Brain,
 } from "lucide-react";
 import { search, type Kind } from "@myapp/core";
@@ -78,6 +79,7 @@ const ICON: Record<string, LucideIcon> = {
   media: Gamepad2,
   wish: Gift,
   fund: HandCoins,
+  pot: PiggyBank,
   memory: Brain,
 };
 

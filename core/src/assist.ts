@@ -3,10 +3,11 @@
 // one, or delete one. A proposal is never saved by the server: the app shows it and saves what you
 // keep. The server cleans every proposed change against what you have (cleanChange), and the apps
 // clean it again before saving, so a bad answer can never write a bad record.
-import { cleanTags } from "./actions";
+import { cleanRule, cleanTags } from "./actions";
 import { isoDate, isoTime, isValidDate, isValidTime, toEpoch } from "./dates";
 import { dayWord, money, monthDay, time12 } from "./format";
 import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES } from "./kinds";
+import { POT_TYPE_META, POT_TYPES, cleanSplit, potMoveFor, ruleWords, splitTotal } from "./pots";
 import type { SearchDoc } from "./search";
 import { minutesInWords } from "./work";
 
@@ -21,6 +22,8 @@ type FieldType =
   | "days" // reminder days before: [30, 7, 1]
   | "details" // [{ label, value }]
   | "currency" // PKR
+  | "split" // an income's pots: [{ pot_id, amount }]
+  | "rule" // a pot's share of each income: { kind: percent|fixed|fill, value }
   | { int: [number, number] }
   | { one: readonly string[] }
   | { ref: Kind };
@@ -70,6 +73,8 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
       recurring: one(["monthly"]),
       paid_from: ref("fund"),
       settles: ref("fund"),
+      pot_id: ref("pot"),
+      split: "split",
     },
     required: ["amount"],
   },
@@ -178,12 +183,20 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
   // money someone gave you to spend for them; what you spend of it is money with paid_from, and
   // settling it (giving back, keeping, being paid back) is done on its hisaab page in the app
   fund: { label: "Money given to you to spend", fields: { from: "text", person_id: ref("person"), purpose: "text", amount: "num", currency: "currency", date: "date", notes: "long" }, required: ["from", "amount"] },
+  // a pot for your own money; what's in it comes from incomes' splits (money split), spending out
+  // of it is money with pot_id, and moving money between pots is the change op "move"
+  pot: {
+    label: "Pot",
+    fields: { name: "text", type: one(POT_TYPES), target: "num", target_date: "date", rule: "rule", opening: "num", currency: "currency", archived: "bool", notes: "long", order: int(0, 999) },
+    required: ["name"],
+  },
 };
 
 // the fields of every kind in words, for the AI's tool description
 export function describeKinds(): string {
   const word = (t: FieldType): string => {
-    if (typeof t === "string") return t === "days" ? "days-before list like [7,1]" : t === "details" ? "[{label,value}]" : t;
+    if (typeof t === "string")
+      return t === "days" ? "days-before list like [7,1]" : t === "details" ? "[{label,value}]" : t === "split" ? "[{pot_id,amount}]" : t === "rule" ? "{kind:percent|fixed|fill,value}" : t;
     if ("one" in t) return t.one.join("|");
     if ("int" in t) return `${t.int[0]}-${t.int[1]}`;
     return `id of a ${t.ref}`;
@@ -269,6 +282,19 @@ function cleanField(name: string, type: FieldType, v: unknown, ctx: { get: (id: 
       const s = typeof v === "string" ? v.trim().toUpperCase() : "";
       return /^[A-Z]{3}$/.test(s) ? { value: s } : { error: `${name} is a 3-letter currency code like PKR` };
     }
+    case "split": {
+      if (!Array.isArray(v)) return { error: `${name} is a list like [{"pot_id":"...","amount":100000}]` };
+      for (const x of v) {
+        const id = x && typeof x === "object" ? String(x.pot_id ?? x.pot ?? "").trim() : "";
+        const r = id ? ctx.get(id) : null;
+        if (!r || r.kind !== "pot") return { error: `${name}: there's no pot with the id ${id || "(none)"}` };
+      }
+      return { value: cleanSplit(v, 1e12, () => true) };
+    }
+    case "rule": {
+      const r = cleanRule(v);
+      return r ? { value: r } : { error: `${name} is {"kind":"percent","value":30}, {"kind":"fixed","value":25000} or {"kind":"fill"}` };
+    }
   }
   return { error: `${name} can't be written` };
 }
@@ -285,7 +311,26 @@ export interface Found {
   data: any;
 }
 
-export type Change = { op: "create"; kind: Kind; data: Record<string, unknown> } | { op: "update"; id: string; kind: Kind; set: Record<string, unknown>; title: string } | { op: "remove"; id: string; kind: Kind; title: string };
+export type Change =
+  | { op: "create"; kind: Kind; data: Record<string, unknown> }
+  | { op: "update"; id: string; kind: Kind; set: Record<string, unknown>; title: string }
+  | { op: "remove"; id: string; kind: Kind; title: string }
+  // money moved between pots (from / to null = money not in a pot); kept on one pot record
+  | { op: "move"; kind: "pot"; from: string | null; to: string | null; amount: number; date: string; note?: string; title: string };
+
+// a money record's pot fields made sense of: only your own money goes in pots, only spending comes
+// out of one, only income is split, and a split is never more than the income
+function potFields(out: Record<string, unknown>, data: any) {
+  const type = out.type ?? data.type;
+  const fund = out.paid_from ?? data.paid_from;
+  const has = (v: unknown) => (Array.isArray(v) ? v.length > 0 : !!v);
+  if ((fund || type === "income") && (has(out.pot_id) || has(data.pot_id))) out.pot_id = null;
+  if ((fund || type !== "income") && (has(out.split) || has(data.split))) out.split = null;
+  if (Array.isArray(out.split)) {
+    const amount = Number(out.amount ?? data.amount) || 0;
+    out.split = cleanSplit(out.split, amount, () => true);
+  }
+}
 
 // the fields of `raw` that `kind` has, cleaned; with what was wrong and what was left out
 function cleanFields(kind: Kind, raw: unknown, ctx: { get: (id: string) => Found | null }) {
@@ -337,6 +382,8 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
     if (kind === "money") {
       if (!((out.amount as number) > 0)) return { error: "money needs an amount above 0" };
       out.category = category(out.category, out.type);
+      potFields(out, {});
+      for (const k of ["pot_id", "split"]) if (out[k] === null || (Array.isArray(out[k]) && !(out[k] as unknown[]).length)) delete out[k];
     }
     if (kind === "fund" && !((out.amount as number) > 0)) return { error: "money given to you needs an amount above 0" };
     if (kind === "work_log") {
@@ -361,9 +408,32 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
     if (found.kind === "money") {
       if ("amount" in out && !((out.amount as number) > 0)) return { error: "money needs an amount above 0" };
       if ("category" in out || "type" in out) out.category = category(out.category ?? found.data.category, out.type ?? found.data.type);
+      // a smaller amount trims the split it already had
+      if ("amount" in out && !("split" in out) && Array.isArray(found.data.split) && found.data.split.length && splitTotal(found.data.split) > (out.amount as number)) out.split = found.data.split;
+      potFields(out, found.data);
     }
     if (byteSize(Object.assign({}, found.data, out)) > MAX_RECORD_BYTES) return { error: "that's too big for one record" };
     return { change: { op: "update", id, kind: found.kind, set: out, title: describeRecord(found.kind, found.data).title }, ignored };
+  }
+  if (op === "move") {
+    // money moved between pots: from / to a pot's id, or nothing for money not in a pot
+    const end = (v: unknown): string | null | false => {
+      const id = typeof v === "string" ? v.trim() : "";
+      if (!id || id === "free" || id === "null") return null;
+      const r = ctx.get(id);
+      return r && r.kind === "pot" ? id : false;
+    };
+    const from = end(raw.from);
+    const to = end(raw.to);
+    if (from === false || to === false) return { error: "there's no pot with that id (find it first)" };
+    if (from === to) return { error: "say a pot to move from and a different one to move to" };
+    const amount = Math.round(num(raw.amount) * 100) / 100;
+    if (!(amount > 0 && amount <= 1e12)) return { error: "a move needs an amount above 0" };
+    const date = isValidDate(raw.date) ? (raw.date as string) : ctx.today;
+    const note = oneLine(raw.note, 200) || undefined;
+    if (!potMoveFor(from, to, amount, date)) return { error: "nothing to move" };
+    const name = (id: string | null) => (id ? describeRecord("pot", (ctx.get(id) as Found).data).title : "money not in a pot");
+    return { change: Object.assign({ op: "move" as const, kind: "pot" as const, from, to, amount, date, title: `${name(from)} → ${name(to)}` }, note ? { note } : {}), ignored: [] };
   }
   if (op === "remove" || op === "delete") {
     const id = typeof raw.id === "string" ? raw.id.trim() : "";
@@ -371,11 +441,12 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
     if (!found) return { error: "there's no record with that id (find it first)" };
     return { change: { op: "remove", id, kind: found.kind, title: describeRecord(found.kind, found.data).title }, ignored: [] };
   }
-  return { error: "op is create, update or remove" };
+  return { error: "op is create, update, remove or move" };
 }
 
-// A new record's data from a clean create: what the app's own forms would fill in
-export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { currency: string; today: string }): any {
+// A new record's data from a clean create: what the app's own forms would fill in. ctx.potColor:
+// the colour a new pot gets (the first one no pot has)
+export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { currency: string; today: string; potColor?: number }): any {
   const d: any = Object.assign({}, change.data);
   switch (change.kind) {
     case "todo":
@@ -418,6 +489,8 @@ export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { 
       return Object.assign({ priority: "normal", got: false }, d);
     case "fund":
       return Object.assign({ purpose: "Shopping", currency: ctx.currency, date: ctx.today, moves: [], closed: false }, d);
+    case "pot":
+      return Object.assign({ type: "spend", currency: ctx.currency, moves: [], archived: false }, typeof ctx.potColor === "number" ? { color: ctx.potColor } : {}, d);
     default:
       return d;
   }
@@ -480,7 +553,15 @@ export function describeRecord(kind: Kind, d: any, opts: { currency?: string; to
     case "money":
       return {
         title: d.note || d.category || "Money",
-        detail: join([`${d.type === "income" ? "Earned" : "Spent"} ${money(Number(d.amount) || 0, cur)}`, d.category, day(d.date), d.recurring ? "Every month" : "", d.paid_from ? "Out of money given to you" : ""]),
+        detail: join([
+          `${d.type === "income" ? "Earned" : "Spent"} ${money(Number(d.amount) || 0, cur)}`,
+          d.category,
+          day(d.date),
+          d.recurring ? "Every month" : "",
+          d.paid_from ? "Out of money given to you" : "",
+          !d.paid_from && d.type !== "income" && d.pot_id ? "From a pot" : "",
+          !d.paid_from && d.type === "income" && Array.isArray(d.split) && d.split.length ? `${d.split.length === 1 ? "1 pot" : `${d.split.length} pots`} got ${money(splitTotal(d.split), cur)}` : "",
+        ]),
       };
     case "event":
       return { title: d.title || "Event", detail: join([day(d.date), t(d.time), d.place]) };
@@ -522,6 +603,13 @@ export function describeRecord(kind: Kind, d: any, opts: { currency?: string; to
       return { title: d.text || "Memory", detail: d.topic ? `About ${d.topic}` : "Remembered" };
     case "fund":
       return { title: `${d.purpose || "Money"} · from ${d.from || "someone"}`, detail: join([`Gave you ${money(Number(d.amount) || 0, cur)}`, day(d.date), d.closed ? "Settled" : ""]) };
+    case "pot": {
+      const meta = POT_TYPE_META[d.type as keyof typeof POT_TYPE_META] || POT_TYPE_META.spend;
+      return {
+        title: d.name || "Pot",
+        detail: join([`${meta.name} pot`, Number(d.target) > 0 ? `${meta.target} ${money(Number(d.target), cur)}` : "", d.target_date ? `by ${day(d.target_date)}` : "", ruleWords(d.rule, cur), d.archived ? "Put away" : ""]),
+      };
+    }
   }
   return { title: KIND_SPECS[kind as Kind]?.label || String(kind), detail: "" };
 }
@@ -544,6 +632,7 @@ export function recordDoc(rec: { id: string; kind: Kind; data: any }): SearchDoc
 // a change in words, for its card: what happens and to what
 export function describeChange(change: Change, opts: { currency?: string; today?: string; current?: any } = {}): { verb: string; title: string; detail: string } {
   const label = KIND_SPECS[change.kind]?.label || change.kind;
+  if (change.op === "move") return { verb: "Move money", title: change.title, detail: join([money(change.amount, opts.currency || "PKR"), dayWord(change.date, opts.today || isoDate()), change.note]) };
   if (change.op === "create") {
     const d = newRecordData(change, { currency: opts.currency || "PKR", today: opts.today || isoDate() });
     const w = describeRecord(change.kind, d, opts);
@@ -551,7 +640,12 @@ export function describeChange(change: Change, opts: { currency?: string; today?
   }
   if (change.op === "remove") return { verb: `Delete ${label.toLowerCase()}`, title: opts.current ? describeRecord(change.kind, opts.current, opts).title : change.title, detail: "" };
   const title = opts.current ? describeRecord(change.kind, opts.current, opts).title : change.title;
-  const fields = Object.entries(change.set).map(([k, v]) => `${fieldWord(k)}: ${valueWord(v)}`);
+  const cur = opts.currency || "PKR";
+  const fields = Object.entries(change.set).map(([k, v]) => {
+    if (k === "split" && Array.isArray(v)) return v.length ? `Split: ${v.length === 1 ? "1 pot" : `${v.length} pots`}, ${money(splitTotal(v as any), cur)}` : "Split: none";
+    if (k === "rule") return v ? `Rule: ${ruleWords(v as any, cur)}` : "Rule: none";
+    return `${fieldWord(k)}: ${valueWord(v)}`;
+  });
   return { verb: `Change ${label.toLowerCase()}`, title, detail: fields.join(" · ") };
 }
 
@@ -579,6 +673,8 @@ const FIELD_WORD: Record<string, string> = {
   car_id: "Car",
   interest_id: "Interest",
   rate_unit: "Rate per",
+  pot_id: "Pot",
+  target_date: "By",
 };
 export const fieldWord = (k: string) => FIELD_WORD[k] || k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, " ");
 export function valueWord(v: unknown): string {

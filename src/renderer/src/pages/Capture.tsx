@@ -6,13 +6,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { ArrowRight, Bot, Check, CornerDownLeft, History, NotebookPen, PencilLine, RotateCcw, Sparkles, Undo2, X } from "lucide-react";
-import { actionToRecords, saveActions, type Action, type PersonRef } from "@myapp/core";
+import { actionToRecords, nextPotColor, saveActions, type Action, type PersonRef } from "@myapp/core";
 import { Button, Card, CardTitle, Chip, Empty, IconButton, Kbd, Page, Textarea, toast } from "@/components/ui";
 import { Orb, type OrbState } from "@/components/orb/Orb";
 import { useList, useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 import { edit, useUI, type EditKind } from "@/store/ui";
-import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, remember, sortOut, whoseOf, type OpenFund } from "@/lib/capture";
+import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, potNameOf, remember, sortOut, whoseOf, type OpenFund, type OpenPot } from "@/lib/capture";
+import { autoSplit, movePot, potsNow, usePots } from "@/lib/pots";
 import { addMove, useFunds } from "@/lib/funds";
 import { navigate, useQuery } from "@/lib/router";
 import { doneWithNotes } from "@/lib/inbox";
@@ -48,6 +49,9 @@ export default function Capture() {
   // hisaabs still open: what you buy may go on one of them
   const fundRows = useFunds().open;
   const funds: OpenFund[] = useMemo(() => fundRows.map((r) => ({ id: r.fund.id, from: r.fund.data.from, purpose: r.fund.data.purpose, left: r.summary.left })), [fundRows]);
+  // your pots: the AI may put money into them or take spending out of them
+  const potRows = usePots().rows;
+  const pots: OpenPot[] = useMemo(() => potRows.map((r) => ({ id: r.pot.id, name: r.pot.data.name, type: r.pot.data.type, balance: r.summary.balance, rule: !!r.pot.data.rule })), [potRows]);
   const [text, setText] = useState(query.get("text") || "");
   // sent from notes (ones saved while the server was offline): once saved, those notes are done
   const [fromNotes] = useState(() => (query.get("notes") || "").split(",").filter(Boolean));
@@ -92,8 +96,9 @@ export default function Capture() {
   const chosen = keep.filter((k, i) => k && !moved[i]).length;
   const cards = useMemo(() => {
     const whose = whoseOf(actions, keep, funds);
-    return actions.map((a) => describe(a, currency, whose));
-  }, [actions, keep, funds, currency]);
+    const potName = potNameOf(actions, keep, pots);
+    return actions.map((a) => describe(a, currency, whose, potName, (amount) => autoSplit(amount)));
+  }, [actions, keep, funds, pots, currency]);
   const reviewing = phase === "review" || phase === "saved";
 
   const ask = async (input = text.trim()) => {
@@ -103,7 +108,7 @@ export default function Capture() {
     setError(null);
     useRecords.getState().setMeta(HISTORY_KEY, JSON.stringify(remember(history.map((h) => h.text), input).map((t) => ({ text: t, at: t === input ? Date.now() : history.find((h) => h.text === t)?.at || Date.now() }))));
     try {
-      const r = await sortOut(input, { currency, people, funds });
+      const r = await sortOut(input, { currency, people, funds, pots });
       setActions(r.actions);
       setKeep(r.actions.map(() => true));
       setMoved(r.actions.map(() => false));
@@ -139,11 +144,17 @@ export default function Capture() {
     if (!chosen || phase !== "review") return;
     const s = useRecords.getState();
     // the money given first, then what's bought with it (core's saveActions keeps that order)
-    const created = saveActions(
-      actions.filter((_, i) => keep[i] && !moved[i]),
-      { currency, people, create: (kind, data) => s.create(kind, data as never).id, addMore: (id, m) => void addMove(id, "more", m.amount, m.note, m.date) },
-    );
-    const n = created.length || actions.filter((a, i) => keep[i] && !moved[i] && a.type === "fund").length;
+    const kept = actions.filter((_, i) => keep[i] && !moved[i]);
+    const created = saveActions(kept, {
+      currency,
+      people,
+      create: (kind, data) => s.create(kind, data as never).id,
+      addMore: (id, m) => void addMove(id, "more", m.amount, m.note, m.date),
+      addPotMove: (id, m) => void movePot(m.dir === "out" ? id : null, m.dir === "out" ? m.other : id, m.amount, m.note, m.date),
+      autoSplit: (amount) => autoSplit(amount),
+      potColor: nextPotColor(potsNow()),
+    });
+    const n = Math.max(created.length, kept.length);
     setPhase("saved");
     const done = n && fromNotes.length ? doneWithNotes(fromNotes, created) : null;
     if (done?.removed) toast(`${n === 1 ? "Saved" : `Saved ${n} things`}, and the note${done.removed === 1 ? " is" : "s are"} done`, { action: { label: "Undo", run: done.undo } });
@@ -172,7 +183,7 @@ export default function Capture() {
 
   // in the full editor: everything about it can be changed there, and Save there keeps it
   const openInEditor = (i: number) => {
-    const d = actionToRecords(actions[i], { currency, people })[0];
+    const d = actionToRecords(actions[i], { currency, people, potOf: (ref) => (ref === "new" ? null : ref) })[0];
     if (!d) return;
     if (d.kind === "note") {
       const rec = useRecords.getState().create("note", d.data);

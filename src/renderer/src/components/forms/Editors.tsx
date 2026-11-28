@@ -1,7 +1,7 @@
 // The editor drawer: one place where any record is added or changed, from any page (and from
 // Search, the tray and the menu). It slides in from the right and leaves the page in view.
-import { useState } from "react";
-import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, PiggyBank, ArrowRightLeft, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import {
   addDays,
   CAR_PAPERS,
@@ -40,6 +40,8 @@ import { removeFund, reopenIfOwed } from "@/lib/funds";
 import { ChipRow, Form, FormFooter, RemindChips, Row2, TagsInput } from "./kit";
 import { ClientForm, DomainForm, ProjectForm, ServerForm, WorkLogForm } from "./WorkEditors";
 import { InterestForm, MediaForm, PracticeForm, WishForm, WordForm } from "./InterestEditors";
+import { PotForm, PotMoveForm, PotPicker, SplitEditor, splitAsNumbers, splitFromNumbers, splitOverNumbers } from "./PotEditors";
+import { autoSplit, suggestedPot, usePots } from "@/lib/pots";
 
 type FormProps<K extends EditKind> = { rec: Rec<any> | null; preset?: Record<string, any>; close: () => void; kind?: K };
 
@@ -66,6 +68,8 @@ const META: Record<EditKind, { icon: LucideIcon; add: string; edit: string; tone
   media: { icon: Gamepad2, add: "Add a game, book or show", edit: "Edit" },
   wish: { icon: Gift, add: "Add to your wishlist", edit: "Edit wish" },
   fund: { icon: HandCoins, add: "Money given to you to spend", edit: "Edit the hisaab" },
+  pot: { icon: PiggyBank, add: "A new pot", edit: "Edit the pot" },
+  pot_move: { icon: ArrowRightLeft, add: "Move money", edit: "Move money" },
 };
 
 const undoToast = (text: string, rec: Rec) => toast.undo(text, () => useRecords.getState().restore(rec));
@@ -337,11 +341,35 @@ function MoneyForm({ rec, preset, close }: FormProps<"money">) {
   const fund = useRecords((s) => (fundId ? (s.byId[fundId] as Rec<"fund"> | undefined) : undefined));
   const cats: readonly string[] = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const cur = d.currency || currency;
-  const ok = !!amount && amount > 0 && !!category;
-  const why = !amount || amount <= 0 ? "Type an amount" : !category ? "Pick a category" : "";
+  // pots: the pot spending comes out of, and how an income is split (by pot id); "touched" once you
+  // pick yourself, until then a new expense shows the pot you used before and a new income your rules
+  const pots = usePots();
+  const presetPot: string | null = preset?.pot_id || null;
+  const [potId, setPotId] = useState<string | null>(rec ? d.pot_id || null : presetPot);
+  const [potTouched, setPotTouched] = useState(!!rec || !!presetPot);
+  const [split, setSplit] = useState<Record<string, number | null>>(splitAsNumbers(d.split));
+  const [splitTouched, setSplitTouched] = useState(!!rec);
+  const value = Number(amount) || 0;
+  const potsHere = !fundId && pots.rows.length > 0;
+  const hasRules = pots.rows.some((r) => !!r.pot.data.rule);
+  const suggested = useMemo(() => (potsHere && type === "expense" && !rec ? suggestedPot(note, category) : null), [potsHere, type, note, category, rec]);
+  const potShown = potTouched ? potId : type === "expense" ? suggested : null;
+  const auto = useMemo(() => (!splitTouched && type === "income" && hasRules && value > 0 ? splitAsNumbers(autoSplit(value, rec?.id)) : null), [splitTouched, type, hasRules, value, rec?.id]);
+  const splitShown = auto || split;
+  const splitRows = useMemo(() => pots.rows.concat(pots.away.filter((r) => splitShown[r.pot.id])), [pots, splitShown]);
+  const tooMuch = type === "income" && potsHere && splitOverNumbers(splitRows, splitShown, value);
+  const ok = !!amount && amount > 0 && !!category && !tooMuch;
+  const why = !amount || amount <= 0 ? "Type an amount" : !category ? "Pick a category" : tooMuch ? "The pots get more than came in" : "";
   const save = () => {
     if (!ok) return;
-    const data: MoneyData = { type, amount: Math.round(amount! * 100) / 100, currency: cur, category, note: note.trim() || undefined, date, account, recurring: monthly && !fundId ? "monthly" : null };
+    const total = Math.round(amount! * 100) / 100;
+    const data: MoneyData = { type, amount: total, currency: cur, category, note: note.trim() || undefined, date, account, recurring: monthly && !fundId ? "monthly" : null };
+    if (!fundId) {
+      // an edit clears what no longer applies (spending isn't split; income doesn't come out of a pot)
+      data.pot_id = type === "expense" && potShown && pots.byId.has(potShown) ? potShown : undefined;
+      const sp = type === "income" ? splitFromNumbers(splitRows, splitShown, total) : [];
+      data.split = sp.length ? sp : undefined;
+    }
     if (rec) useRecords.getState().update<"money">(rec.id, data);
     else useRecords.getState().create("money", fundId ? { ...data, currency: fund?.data.currency || cur, paid_from: fundId } : data);
     if (fundId) reopenIfOwed(fundId);
@@ -401,6 +429,36 @@ function MoneyForm({ rec, preset, close }: FormProps<"money">) {
       <Field label={fund ? "What you bought" : "What for"}>
         <Input value={note} onChange={setNote} placeholder={fund ? "e.g. Rice and oil" : "Optional"} />
       </Field>
+      {potsHere && type === "expense" && (
+        <Field label="Comes out of">
+          <PotPicker
+            rows={pots.rows.concat(pots.away.filter((r) => r.pot.id === potShown))}
+            value={potShown}
+            onChange={(id) => (setPotId(id), setPotTouched(true))}
+            amount={value > 0 ? value - (rec && d.pot_id === potShown && d.type === "expense" ? Number(d.amount) || 0 : 0) : 0}
+            suggested={potTouched ? null : suggested}
+            currency={cur}
+          />
+        </Field>
+      )}
+      {potsHere && type === "income" && (
+        <Field label="Give it jobs" hint={hasRules && !splitTouched && !rec ? "Split by your pots' rules. Change any amount to make it your own." : undefined}>
+          <SplitEditor
+            rows={splitRows}
+            total={value}
+            split={splitShown}
+            onChange={(next) => (setSplit(next), setSplitTouched(true))}
+            onRules={() => (setSplit(splitAsNumbers(value > 0 ? autoSplit(value, rec?.id) : [])), setSplitTouched(true))}
+            hasRules={hasRules}
+            currency={cur}
+          />
+        </Field>
+      )}
+      {!fundId && !pots.rows.length && type === "income" && !rec && (
+        <div className="text-[12px] text-text3">
+          Tip: make pots on the Money page (Personal, Bills, a loan, savings) and split what you earn between them.
+        </div>
+      )}
       <Row2>
         <Field label="Day">
           <DatePicker value={date} onChange={(v) => setDate(v || isoDate())} clearable={false} />
@@ -1232,6 +1290,7 @@ function CarLogForm({ rec, preset, close }: FormProps<"car_log">) {
 }
 
 // ---------------- host ----------------
+const potName = (id: string | null | undefined) => (id ? (useRecords.getState().byId[id]?.data as { name?: string } | undefined)?.name || "a pot" : "money not in a pot");
 const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   todo: TodoForm,
   item: ItemForm,
@@ -1255,6 +1314,8 @@ const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   media: MediaForm,
   wish: WishForm,
   fund: FundForm,
+  pot: ({ rec, close }) => <PotForm rec={rec} close={close} />,
+  pot_move: ({ preset, close }) => <PotMoveForm preset={preset} close={close} />,
 };
 
 export function EditorHost() {
@@ -1278,7 +1339,11 @@ export function EditorHost() {
           ? e.rec
             ? "Edit the purchase"
             : "A purchase on the hisaab"
-          : e.rec
+          : e.kind === "pot_move"
+            ? e.preset?.from === undefined
+              ? `Move money into ${potName(e.preset?.to)}`
+              : `Move money out of ${potName(e.preset?.from)}`
+            : e.rec
             ? META[e.kind].edit
             : e.kind === "money" && e.preset?.type === "income"
               ? "Money in"

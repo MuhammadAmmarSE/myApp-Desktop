@@ -570,4 +570,162 @@ ok("operator: Claude sessions on claude.ai", () => {
   );
   assert.strictEqual(c.reportStatusWords("needs_you"), "Needs you");
 });
+ok("pots: give money jobs, spend from them, move between them", () => {
+  const today = "2026-11-28";
+  const pots = [
+    { id: "pP", created_at: 1, data: { name: "Personal", type: "spend", target: 120000, color: 0, moves: [] } },
+    { id: "pL", created_at: 2, data: { name: "Loan", type: "debt", target: 500000, target_date: "2027-06-30", color: 1, moves: [] } },
+    { id: "pS", created_at: 3, data: { name: "Savings", type: "save", target: 240000, target_date: "2027-04-30", rule: { kind: "percent", value: 10 }, color: 2, opening: 20000, moves: [] } },
+  ];
+  // earned 300,000: 100,000 personal, 100,000 loan, the rest given no job
+  const money = [
+    { id: "m1", created_at: 10, data: { type: "income", amount: 300000, currency: "PKR", category: "Freelance", date: "2026-11-05", split: [{ pot_id: "pP", amount: 100000 }, { pot_id: "pL", amount: 100000 }] } },
+    { id: "m2", created_at: 11, data: { type: "expense", amount: 15000, currency: "PKR", category: "Food & dining", note: "Dinner", date: "2026-11-10", pot_id: "pP" } },
+    { id: "m3", created_at: 12, data: { type: "expense", amount: 40000, currency: "PKR", category: "Loans & debt", note: "Loan installment", date: "2026-11-12", pot_id: "pL" } },
+    { id: "m4", created_at: 13, data: { type: "expense", amount: 8000, currency: "PKR", category: "Fuel", date: "2026-11-14" } },
+    // spent out of someone else's money: never in a pot
+    { id: "m5", created_at: 14, data: { type: "expense", amount: 999, currency: "PKR", category: "Groceries", date: "2026-11-15", paid_from: "f1", pot_id: "pP" } },
+    // dollars aren't added to rupees
+    { id: "m6", created_at: 15, data: { type: "expense", amount: 50, currency: "USD", category: "Gadgets", date: "2026-11-16", pot_id: "pP" } },
+  ];
+  // moved 10,000 from personal to savings (kept on personal), and 5,000 from money not in a pot into savings
+  pots[0].data.moves = [{ dir: "out", other: "pS", amount: 10000, date: "2026-11-20" }];
+  pots[2].data.moves = [{ dir: "in", other: null, amount: 5000, date: "2026-11-21" }];
+  const opts = { today, currency: "PKR" };
+  const P = c.potSummary(pots[0], pots, money, opts);
+  assert.deepStrictEqual([P.balance, P.putIn, P.spent, P.movedOut, P.month.spent], [75000, 100000, 15000, 10000, 15000]);
+  assert.strictEqual(c.potStanding(pots[0], P, "PKR"), "Rs 75,000 left · Rs 15,000 of Rs 120,000 spent this month");
+  assert.strictEqual(P.meter, "use");
+  assert.deepStrictEqual(P.entries.map((e) => e.type), ["move_out", "spend", "income"]);
+  const L = c.potSummary(pots[1], pots, money, opts);
+  assert.deepStrictEqual([L.balance, L.paid, L.owed], [60000, 40000, 460000]);
+  assert.strictEqual(c.potStanding(pots[1], L, "PKR"), "Rs 460,000 still owed of Rs 500,000 · Rs 60,000 set aside");
+  // (460,000 owed - 60,000 already set aside) over the 8 months to June
+  assert.strictEqual(L.perMonth, 50000);
+  const S = c.potSummary(pots[2], pots, money, opts);
+  assert.deepStrictEqual([S.balance, S.opening, S.movedIn], [35000, 20000, 15000]);
+  assert.strictEqual(c.potStanding(pots[2], S, "PKR"), "15% of Rs 240,000 saved · Rs 34,167 a month to reach it by April 2027");
+  // where November's money went; it adds up to the month's overall total
+  const j = c.monthJobs(money, pots, "2026-11", "PKR");
+  assert.deepStrictEqual(j.jobs, [{ pot_id: "pP", amount: 100000 }, { pot_id: "pL", amount: 100000 }, { pot_id: "pS", amount: 5000 }]);
+  assert.deepStrictEqual([j.earned, j.notInPot, j.spentFromPots, j.spentNoPot, j.freeLeft], [300000, 95000, 55000, 8000, 87000]);
+  const net = c.monthSummary(money, "2026-11", "PKR").net;
+  const inPots = [P, L, S].reduce((n, s) => n + s.month.in - s.month.out - s.month.spent, 0);
+  assert.strictEqual(inPots + j.freeLeft, net);
+  // spending more than a pot has
+  const over = money.concat([{ id: "m7", created_at: 16, data: { type: "expense", amount: 80000, currency: "PKR", category: "Shopping", date: "2026-11-25", pot_id: "pP" } }]);
+  const O = c.potSummary(pots[0], pots, over, opts);
+  assert.ok(O.over);
+  assert.strictEqual(c.potStanding(pots[0], O, "PKR"), "Rs 5,000 over: move money in to cover it");
+  // a pot deleted: its spending counts as no pot
+  assert.strictEqual(c.monthJobs(money, pots.slice(1), "2026-11", "PKR").spentNoPot, 23000);
+});
+ok("pots: rules split an income; suggestions; moves; colours", () => {
+  const today = "2026-11-28";
+  const pots = [
+    { id: "b", created_at: 1, data: { name: "Bills", type: "bills", target: 30000, rule: { kind: "fill" }, color: 0, order: 0 } },
+    { id: "s", created_at: 2, data: { name: "Savings", type: "save", rule: { kind: "percent", value: 20 }, color: 1, order: 1 } },
+    { id: "r", created_at: 3, data: { name: "Rent", type: "bills", rule: { kind: "fixed", value: 50000 }, color: 2, order: 2 } },
+    { id: "x", created_at: 4, data: { name: "Old", type: "spend", rule: { kind: "percent", value: 50 }, archived: true, color: 3 } },
+  ];
+  // bills already got 10,000 this month, so the fill tops it up by 20,000
+  const money = [{ id: "i0", created_at: 1, data: { type: "income", amount: 10000, currency: "PKR", category: "Other", date: "2026-11-02", split: [{ pot_id: "b", amount: 10000 }] } }];
+  const opts = { today, currency: "PKR" };
+  assert.deepStrictEqual(c.ruleSplit(pots, money, 200000, opts), [{ pot_id: "b", amount: 20000 }, { pot_id: "r", amount: 50000 }, { pot_id: "s", amount: 40000 }]);
+  // a small income fills in order and never goes past what came in
+  assert.deepStrictEqual(c.ruleSplit(pots, money, 30000, opts), [{ pot_id: "b", amount: 20000 }, { pot_id: "r", amount: 10000 }]);
+  // editing the income that filled bills doesn't count it twice
+  assert.deepStrictEqual(c.ruleSplit(pots, money, 10000, Object.assign({ except: "i0" }, opts)), [{ pot_id: "b", amount: 10000 }]);
+  assert.strictEqual(c.ruleWords({ kind: "percent", value: 20 }, "PKR"), "Gets 20% of each income");
+  assert.strictEqual(c.ruleWords({ kind: "fixed", value: 50000 }, "PKR"), "Gets Rs 50,000 of each income");
+  // a split cleaned: real pots, merged, trimmed to the income
+  const isPot = (id) => ["b", "s"].includes(id);
+  assert.deepStrictEqual(c.cleanSplit([{ pot_id: "b", amount: 600 }, { pot_id: "nope", amount: 5 }, { pot_id: "b", amount: 100 }, { pot_id: "s", amount: "500" }], 1000, isPot), [{ pot_id: "b", amount: 700 }, { pot_id: "s", amount: 300 }]);
+  // the pot this spending comes out of, from before
+  const past = [
+    { id: "e1", created_at: 1, data: { type: "expense", amount: 1, currency: "PKR", category: "Fuel", note: "Petrol", date: "2026-10-01", pot_id: "s" } },
+    { id: "e2", created_at: 2, data: { type: "expense", amount: 1, currency: "PKR", category: "Fuel", date: "2026-11-01", pot_id: "b" } },
+    { id: "e3", created_at: 3, data: { type: "expense", amount: 1, currency: "PKR", category: "Fuel", date: "2026-11-03", pot_id: "b" } },
+  ];
+  assert.strictEqual(c.suggestPot(past, { note: "petrol", category: "Fuel", today }, isPot), "s");
+  assert.strictEqual(c.suggestPot(past, { note: "car wash", category: "Fuel", today }, isPot), "b");
+  assert.strictEqual(c.suggestPot(past, { category: "Health", today }, isPot), null);
+  // moves: kept on the pot money leaves, or on the one it goes into from money not in a pot
+  assert.deepStrictEqual(c.potMoveFor("s", "b", 500, "2026-11-28"), { pot_id: "s", move: { dir: "out", other: "b", amount: 500, date: "2026-11-28" } });
+  assert.deepStrictEqual(c.potMoveFor(null, "b", 500, "2026-11-28", "top up"), { pot_id: "b", move: { dir: "in", other: null, amount: 500, date: "2026-11-28", note: "top up" } });
+  assert.strictEqual(c.potMoveFor("b", "b", 500, "2026-11-28"), null);
+  assert.strictEqual(c.potMoveFor(null, null, 500, "2026-11-28"), null);
+  // colours: the first slot no pot has, and the same pot keeps its colour
+  assert.strictEqual(c.nextPotColor(pots), 4);
+  assert.strictEqual(c.potColor(9, "dark"), c.POT_COLORS.dark[1]);
+  assert.deepStrictEqual(c.sortPots(pots).map((p) => p.id), ["b", "s", "r", "x"]);
+});
+ok("pots: capture actions and the assistant's changes", () => {
+  const out = c.cleanActions(
+    [
+      { type: "money", money_type: "income", amount: "300,000", category: "freelance", split: [{ pot: "pP", amount: 100000 }, { pot: "pL", amount: "100k" }, { pot: "zz", amount: 5 }, { pot: "pP", amount: 250000 }] },
+      { type: "money", money_type: "expense", amount: 2500, category: "fuel", pot: "pP" },
+      { type: "money", money_type: "expense", amount: 300, category: "groceries", pot: "pL", from_fund: "f1" },
+      { type: "pot", name: "Wedding", pot_type: "save", target: "500000", target_date: "2027-06-01", rule: { kind: "percent", value: 15 } },
+      { type: "pot_move", from: "pP", to: "new", amount: 10000 },
+      { type: "pot_move", from: "free", to: "pL", amount: 5000 },
+      { type: "pot_move", from: "pP", to: "pP", amount: 5 },
+      { type: "money", money_type: "expense", amount: 900, pot: "new" },
+    ],
+    { today: "2026-11-28", funds: ["f1"], pots: ["pP", "pL"] },
+  );
+  // "100k" isn't a number, the unknown pot is dropped, and the split stops at the income
+  assert.deepStrictEqual(out[0].split, [{ pot: "pP", amount: 300000 }]);
+  assert.strictEqual(out[1].pot, "pP");
+  // someone else's money is never in your pots
+  assert.deepStrictEqual([out[2].from_fund, out[2].pot], ["f1", undefined]);
+  assert.deepStrictEqual([out[3].name, out[3].pot_type, out[3].target, out[3].target_date, out[3].rule], ["Wedding", "save", 500000, "2027-06-01", { kind: "percent", value: 15 }]);
+  assert.deepStrictEqual([out[4].from, out[4].to, out[5].from, out[5].to], ["pP", "new", null, "pL"]);
+  assert.strictEqual(out.length, 7);
+  assert.strictEqual(out[6].pot, "new");
+  // with no new pot in the capture, nothing can point at one
+  const lone = c.cleanActions([{ type: "pot_move", from: "pP", to: "new", amount: 1 }, { type: "money", money_type: "expense", amount: 9, pot: "new" }], { today: "2026-11-28", pots: ["pP"] });
+  assert.deepStrictEqual(lone.map((a) => [a.type, a.pot]), [["money", undefined]]);
+  // saved: the new pot first; an income with no split of its own gets the rules' split
+  const made = [];
+  const moves = [];
+  let k = 0;
+  const actions = out.concat(c.cleanActions([{ type: "money", money_type: "income", amount: 1000, category: "salary" }], { today: "2026-11-28" }));
+  c.saveActions(actions, {
+    currency: "PKR",
+    people: [],
+    potColor: 5,
+    create: (kind, data) => (made.push({ kind, data }), `r${++k}`),
+    addMore: () => {},
+    addPotMove: (id, move) => moves.push([id, move.dir, move.other, move.amount]),
+    autoSplit: (amount) => [{ pot_id: "pS", amount: amount / 10 }],
+  });
+  assert.deepStrictEqual(made[0], { kind: "pot", data: { name: "Wedding", type: "save", target: 500000, target_date: "2027-06-01", rule: { kind: "percent", value: 15 }, currency: "PKR", moves: [], archived: false, color: 5 } });
+  assert.deepStrictEqual(made[1].data.split, [{ pot_id: "pP", amount: 300000 }]);
+  assert.deepStrictEqual([made[2].data.pot_id, made[3].data.pot_id, made[3].data.paid_from, made[4].data.pot_id], ["pP", undefined, "f1", "r1"]);
+  assert.deepStrictEqual(made[5].data.split, [{ pot_id: "pS", amount: 100 }]);
+  assert.deepStrictEqual(moves, [["pP", "out", "r1", 10000], ["pL", "in", null, 5000]]);
+  // the assistant: a new pot, an income split, spending from a pot, a move
+  const recs = { pP: { kind: "pot", data: { name: "Personal", type: "spend" } }, pL: { kind: "pot", data: { name: "Loan", type: "debt", target: 500000 } }, m1: { kind: "money", data: { type: "income", amount: 300000, category: "Freelance", date: "2026-11-05", split: [{ pot_id: "pP", amount: 200000 }] } } };
+  const get = (id) => recs[id] || null;
+  const cc = (ch) => c.cleanChange(ch, { today: "2026-11-28", get });
+  const pot = cc({ op: "create", kind: "pot", data: { name: "Bills", type: "bills", target: 30000, rule: { kind: "fill" } } });
+  assert.strictEqual(c.describeChange(pot.change, { currency: "PKR" }).detail, "Bills pot · Needed each month Rs 30,000 · Gets what it still needs this month");
+  assert.strictEqual(c.newRecordData(pot.change, { currency: "PKR", today: "2026-11-28", potColor: 3 }).color, 3);
+  const inc = cc({ op: "create", kind: "money", data: { type: "income", amount: 1000, split: [{ pot_id: "pP", amount: 800 }, { pot_id: "pL", amount: 800 }] } });
+  assert.deepStrictEqual(inc.change.data.split, [{ pot_id: "pP", amount: 800 }, { pot_id: "pL", amount: 200 }]);
+  assert.ok(cc({ op: "create", kind: "money", data: { type: "income", amount: 1, split: [{ pot_id: "m1", amount: 1 }] } }).error.includes("no pot"));
+  // spending isn't split, and income doesn't come out of a pot
+  assert.deepStrictEqual(cc({ op: "create", kind: "money", data: { type: "expense", amount: 5, pot_id: "pP", split: [{ pot_id: "pL", amount: 5 }] } }).change.data, { type: "expense", amount: 5, pot_id: "pP", category: "Other" });
+  // a smaller income trims its split; a change to spending drops it
+  assert.deepStrictEqual(cc({ op: "update", id: "m1", set: { amount: 150000 } }).change.set, { amount: 150000, split: [{ pot_id: "pP", amount: 150000 }] });
+  assert.deepStrictEqual(cc({ op: "update", id: "m1", set: { type: "expense" } }).change.set, { type: "expense", category: "Other", split: null });
+  const mv = cc({ op: "move", from: "pP", to: "pL", amount: "20000" });
+  assert.deepStrictEqual(c.describeChange(mv.change, { currency: "PKR", today: "2026-11-28" }), { verb: "Move money", title: "Personal → Loan", detail: "Rs 20,000 · Today" });
+  assert.strictEqual(cc({ op: "move", from: null, to: "pL", amount: 1 }).change.title, "money not in a pot → Loan");
+  assert.ok(cc({ op: "move", from: "pP", to: "m1", amount: 1 }).error);
+  assert.ok(cc({ op: "move", from: "pP", to: "pP", amount: 1 }).error);
+  assert.strictEqual(c.describeRecord("money", recs.m1.data).detail.includes("1 pot got Rs 200,000"), true);
+  assert.ok(c.guideFor("pots").features.some((f) => f.id === "pots"));
+});
 console.log(`core: ${n} checks passed`);

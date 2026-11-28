@@ -28,6 +28,7 @@ export const KINDS = [
   "wish",
   "memory",
   "fund",
+  "pot",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (k: unknown): k is Kind => typeof k === "string" && (KINDS as readonly string[]).includes(k);
@@ -116,6 +117,11 @@ export interface MoneyData {
   // what's left of a fund kept as your income, or what you spent over it covered yourself (the
   // fund's id): yours, counted like any money
   settles?: string | null;
+  // your own spending out of one of your pots (a pot's id); never set with paid_from
+  pot_id?: string | null;
+  // your own income given jobs: how much of it went into which pot. What isn't split is money not
+  // in a pot
+  split?: PotSplit[];
 }
 
 export interface EventData {
@@ -344,6 +350,47 @@ export interface FundData {
   [k: string]: unknown;
 }
 
+// Pots: your own money given jobs (envelope budgeting). Money you earn can be split into pots
+// ("100,000 for personal spending, 100,000 for the loan"), what you spend can come out of one, and
+// money can be moved between them. A pot keeps its balance from month to month, like an envelope,
+// and your overall totals don't change: pots are a second way of looking at the same money.
+export type PotType = "spend" | "bills" | "save" | "debt";
+// how much of each income a pot gets on its own (the split is filled in for you; you can change it)
+// percent: that share of the income; fixed: that amount; fill: what it still needs this month
+export interface PotRule {
+  kind: "percent" | "fixed" | "fill";
+  value?: number;
+}
+export interface PotSplit {
+  pot_id: string;
+  amount: number;
+}
+// money moved into this pot or out of it; other is the pot it came from or went to, null = money
+// not in a pot. A move between two pots is kept on one of them only (the one it left).
+export interface PotMove {
+  dir: "in" | "out";
+  other: string | null;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  note?: string;
+}
+export interface PotData {
+  name: string;
+  type: PotType;
+  // spend: a monthly limit; bills: what's needed each month; save: the goal; debt: what you owe
+  target?: number | null;
+  target_date?: string | null; // save / debt: by when
+  rule?: PotRule | null;
+  opening?: number | null; // money already in it when you made it
+  currency?: string;
+  color?: number; // its colour, a slot of the pot palette (kept, so it never changes with order)
+  order?: number;
+  archived?: boolean;
+  moves?: PotMove[];
+  notes?: string;
+  [k: string]: unknown;
+}
+
 export interface KindData {
   todo: TodoData;
   item: ItemData;
@@ -369,6 +416,7 @@ export interface KindData {
   wish: WishData;
   memory: MemoryData;
   fund: FundData;
+  pot: PotData;
 }
 
 export interface Rec<K extends Kind = Kind> {
@@ -399,6 +447,7 @@ export const EXPENSE_CATEGORIES = [
   "Travel",
   "Gifts",
   "Charity",
+  "Loans & debt",
   "Other",
 ] as const;
 export const INCOME_CATEGORIES = ["Salary", "Freelance", "Business", "Gift", "Refund", "Other"] as const;

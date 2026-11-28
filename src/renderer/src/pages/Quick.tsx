@@ -11,7 +11,7 @@ import type { Draft, QuickContext } from "@shared/ipc";
 import { Button, Kbd, Spin } from "@/components/ui";
 import { Orb, type OrbState } from "@/components/orb/Orb";
 import { applyTheme } from "@/theme";
-import { ACTION_AREA, ACTION_ICON, describe, sortOut, whoseOf } from "@/lib/capture";
+import { ACTION_AREA, ACTION_ICON, describe, potNameOf, sortOut, whoseOf } from "@/lib/capture";
 import { ApiError } from "@/lib/api";
 import { bridge, isMac } from "@/lib/bridge";
 import { useListen } from "@/lib/listen";
@@ -33,6 +33,9 @@ export default function Quick() {
   const people: PersonRef[] = useMemo(() => (ctx?.people || []).map((p) => ({ id: p.id, name: p.name, relation: p.relation as Relation })), [ctx]);
   const currency = ctx?.currency || "PKR";
   const funds = useMemo(() => ctx?.funds || [], [ctx]);
+  const pots = useMemo(() => ctx?.pots || [], [ctx]);
+  // the split is made by the main window, which has the records: here it can only say there is one
+  const rules = useMemo(() => (pots.some((p) => p.rule) ? () => true as const : () => []), [pots]);
 
   const reset = () => {
     setText("");
@@ -86,7 +89,7 @@ export default function Quick() {
     setPhase("thinking");
     setError("");
     try {
-      const r = await sortOut(t, { currency, people, funds });
+      const r = await sortOut(t, { currency, people, funds, pots });
       setActions(r.actions);
       setKeep(r.actions.map(() => true));
       setReply(r.reply);
@@ -114,6 +117,7 @@ export default function Quick() {
           return ref;
         },
         addMore: (fund_id, move) => drafts.push({ kind: "fund_more", data: { fund_id, move } }),
+        addPotMove: (pot_id, move) => drafts.push({ kind: "pot_move", data: { pot_id, move } }),
       },
     );
     if (!drafts.length) return;
@@ -222,7 +226,7 @@ export default function Quick() {
                     {reply && <p className="selectable rounded-[11px] bg-accent-soft/60 px-3 py-2 text-[13px]">{reply}</p>}
                     {summary && actions.length > 0 && <div className="px-1 text-[12px] text-text2">{summary}</div>}
                     {actions.map((a, i) => {
-                      const d = describe(a, currency, whoseOf(actions, keep, funds));
+                      const d = describe(a, currency, whoseOf(actions, keep, funds), potNameOf(actions, keep, pots), rules);
                       const Icon = ACTION_ICON[a.type];
                       const on = keep[i];
                       return (

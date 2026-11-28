@@ -4,7 +4,8 @@
 // hears about it. What you decided is kept here until the server has it, so a change can't be
 // saved twice, even after a restart or while offline. (The phone's lib/proposals.ts does the same.)
 import { create } from "zustand";
-import { cleanChange, isoDate, newRecordData, updatedRecordData, type Change, type ProposalItem, type Rec } from "@myapp/core";
+import { cleanChange, isoDate, newRecordData, nextPotColor, updatedRecordData, type Change, type ProposalItem, type Rec } from "@myapp/core";
+import { movePot } from "@/lib/pots";
 import { api } from "@/lib/api";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
@@ -71,8 +72,14 @@ function apply(change: Change): { ok: true; id: string; undo: () => void } | { o
   if ("error" in c) return { ok: false, why: c.error.replace(/\(find it first\)/, "(it may have been deleted)") };
   const ch = c.change;
   if (ch.op === "create") {
-    const rec = s.create(ch.kind, newRecordData(ch, { currency: useSettings.getState().currency, today }));
+    const rec = s.create(ch.kind, newRecordData(ch, { currency: useSettings.getState().currency, today, potColor: nextPotColor(s.lists.pot as Rec<"pot">[]) }));
     return { ok: true, id: rec.id, undo: () => useRecords.getState().remove(rec.id) };
+  }
+  // money moved between pots: kept on one of them
+  if (ch.op === "move") {
+    const undo = movePot(ch.from, ch.to, ch.amount, ch.note, ch.date);
+    if (!undo) return { ok: false, why: "That pot isn't here any more." };
+    return { ok: true, id: (ch.from || ch.to) as string, undo };
   }
   const was = s.byId[ch.id] as Rec;
   if (ch.op === "update") {

@@ -142,6 +142,20 @@ function captureTurn(body) {
           .map((name) => ({ type: "item", name: name[0].toUpperCase() + name.slice(1), list: "grocery", mode: "store", today: true, from_fund: "new" })),
       ],
     };
+  // "loan installment …": spending out of the Loan pot, money moved into it, and a new pot (the pots'
+  // ids are in what the app sent, as the real AI sees them)
+  if (/installment/i.test(text)) {
+    const sys = String((body.messages && body.messages[0] && body.messages[0].content) || "");
+    const potId = (name) => (sys.match(new RegExp(`id ([\\w-]+) = ${name} \\(`)) || [])[1];
+    return {
+      summary: "The loan installment from the Loan pot, 5,000 moved into it, and a pot for the wedding.",
+      actions: [
+        { type: "money", money_type: "expense", amount: 20000, category: "Loans & debt", note: "Loan installment", date: day(0), pot: potId("Loan") },
+        { type: "pot_move", from: potId("Personal"), to: potId("Loan"), amount: 5000, date: day(0) },
+        { type: "pot", name: "Wedding", pot_type: "save", target: 500000, rule: { kind: "percent", value: 10 } },
+      ],
+    };
+  }
   if (/various load/i.test(text)) return { summary: "What you paid.", actions: [{ type: "money", money_type: "expense", amount: 30000, category: "Other", note: "Paid to various load", date: day(0) }] };
   return {
     summary: "Two things to buy today, a reminder and what you paid.",
