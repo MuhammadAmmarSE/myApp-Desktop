@@ -6,8 +6,9 @@
 import { cleanRule, cleanTags } from "./actions";
 import { isoDate, isoTime, isValidDate, isValidTime, toEpoch } from "./dates";
 import { dayWord, money, monthDay, time12 } from "./format";
-import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES } from "./kinds";
+import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES, type ItemData, type MoneyData } from "./kinds";
 import { POT_TYPE_META, POT_TYPES, cleanSplit, potMoveFor, ruleWords, splitTotal } from "./pots";
+import { itemsNote, sharedFund } from "./purchase";
 import type { SearchDoc } from "./search";
 import { minutesInWords } from "./work";
 
@@ -316,7 +317,9 @@ export type Change =
   | { op: "update"; id: string; kind: Kind; set: Record<string, unknown>; title: string }
   | { op: "remove"; id: string; kind: Kind; title: string }
   // money moved between pots (from / to null = money not in a pot); kept on one pot record
-  | { op: "move"; kind: "pot"; from: string | null; to: string | null; amount: number; date: string; note?: string; title: string };
+  | { op: "move"; kind: "pot"; from: string | null; to: string | null; amount: number; date: string; note?: string; title: string }
+  // several list items bought together for one price: one expense, every item pointing at it
+  | { op: "buy"; kind: "item"; ids: string[]; amount: number; date: string; account: NonNullable<MoneyData["account"]>; fund: string | null; pot_id?: string | null; note?: string; title: string };
 
 // a money record's pot fields made sense of: only your own money goes in pots, only spending comes
 // out of one, only income is split, and a split is never more than the income
@@ -435,13 +438,51 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
     const name = (id: string | null) => (id ? describeRecord("pot", (ctx.get(id) as Found).data).title : "money not in a pot");
     return { change: Object.assign({ op: "move" as const, kind: "pot" as const, from, to, amount, date, title: `${name(from)} → ${name(to)}` }, note ? { note } : {}), ignored: [] };
   }
+  if (op === "buy") {
+    // things on the list bought together for one price: ids are the items, amount what it all cost
+    const ids: string[] = Array.from(new Set<string>((Array.isArray(raw.ids) ? raw.ids : Array.isArray(raw.items) ? raw.items : []).filter((x: unknown): x is string => typeof x === "string" && !!x.trim()).map((x: string) => x.trim())));
+    if (!ids.length) return { error: "say which list items were bought (their ids)" };
+    if (ids.length > 50) return { error: "at most 50 items in one purchase" };
+    const items: { id: string; data: ItemData }[] = [];
+    for (const id of ids) {
+      const f = ctx.get(id);
+      if (!f || f.kind !== "item") return { error: `there's no list item with the id ${id} (find it first)` };
+      const d = f.data as ItemData;
+      if (d.money_id && ctx.get(d.money_id)) return { error: `${d.name} already has its price in Money` };
+      items.push({ id, data: d });
+    }
+    const amount = Math.round(num(raw.amount) * 100) / 100;
+    if (!(amount > 0 && amount <= 1e12)) return { error: "a purchase needs what it all cost, above 0" };
+    const date = isValidDate(raw.date) ? (raw.date as string) : ctx.today;
+    const account = (["cash", "bank", "card", "wallet"] as const).find((a) => a === raw.account) || "cash";
+    // whose money: a hisaab's id, or theirs ("mine"/null); left out, the one the items are marked for
+    const given = raw.paid_from ?? raw.fund ?? raw.fund_id;
+    let fund: string | null;
+    if (given === undefined) fund = sharedFund(items);
+    else if (typeof given === "string" && given.trim() && !/^(mine|me|own|null|none)$/i.test(given.trim())) {
+      const f = ctx.get(given.trim());
+      if (!f || f.kind !== "fund") return { error: "there's no hisaab with that id (find it first)" };
+      fund = given.trim();
+    } else fund = null;
+    let pot: string | null = null;
+    if (!fund && typeof raw.pot_id === "string" && raw.pot_id.trim()) {
+      const p = ctx.get(raw.pot_id.trim());
+      if (!p || p.kind !== "pot") return { error: "there's no pot with that id (find it first)" };
+      pot = raw.pot_id.trim();
+    }
+    const note = oneLine(raw.note, 200) || undefined;
+    const change: Change = { op: "buy", kind: "item", ids, amount, date, account, fund, title: itemsNote(items) };
+    if (pot) change.pot_id = pot;
+    if (note) change.note = note;
+    return { change, ignored: [] };
+  }
   if (op === "remove" || op === "delete") {
     const id = typeof raw.id === "string" ? raw.id.trim() : "";
     const found = id ? ctx.get(id) : null;
     if (!found) return { error: "there's no record with that id (find it first)" };
     return { change: { op: "remove", id, kind: found.kind, title: describeRecord(found.kind, found.data).title }, ignored: [] };
   }
-  return { error: "op is create, update, remove or move" };
+  return { error: "op is create, update, remove, move or buy" };
 }
 
 // A new record's data from a clean create: what the app's own forms would fill in. ctx.potColor:
@@ -630,9 +671,13 @@ export function recordDoc(rec: { id: string; kind: Kind; data: any }): SearchDoc
 }
 
 // a change in words, for its card: what happens and to what
-export function describeChange(change: Change, opts: { currency?: string; today?: string; current?: any } = {}): { verb: string; title: string; detail: string } {
+export function describeChange(change: Change, opts: { currency?: string; today?: string; current?: any; fundName?: string } = {}): { verb: string; title: string; detail: string } {
   const label = KIND_SPECS[change.kind]?.label || change.kind;
   if (change.op === "move") return { verb: "Move money", title: change.title, detail: join([money(change.amount, opts.currency || "PKR"), dayWord(change.date, opts.today || isoDate()), change.note]) };
+  if (change.op === "buy") {
+    const whose = change.fund ? (opts.fundName ? `from ${opts.fundName}` : "from money given to you") : change.account !== "cash" ? `paid by ${change.account}` : "";
+    return { verb: "Bought together", title: change.title, detail: join([`${change.ids.length} items for ${money(change.amount, opts.currency || "PKR")}`, whose, dayWord(change.date, opts.today || isoDate()), change.note]) };
+  }
   if (change.op === "create") {
     const d = newRecordData(change, { currency: opts.currency || "PKR", today: opts.today || isoDate() });
     const w = describeRecord(change.kind, d, opts);

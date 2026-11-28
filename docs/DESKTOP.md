@@ -154,6 +154,16 @@ recent ones ticked in one click) and `moveOntoFund` moves the ticked ones. Money
 menu offers each open hisaab for that row, or for every picked row when it's one of them; a
 purchase's context menu on the page has "Make it my own spending" (`takeOffFund`).
 
+## One price for several (`components/forms/Purchase.tsx`, `lib/purchase.ts`, core's `purchase.ts`)
+
+The same model as the phone's (myApp's docs/ARCHITECTURE.md → One price for several): one money
+expense for the total, every item it covers pointing at it (`money_id`, no `price`). The editor
+`purchase` (`edit("purchase", null, { picked, fundId })`) is opened from Lists' header, the
+"N bought without a price" prompt, the bulk bar's "One price for these", an item's editor, and a
+hisaab's page (only its items). `lib/purchase.ts` has `buyTogether`, `unbuyOne`, `unbuyAll` and
+`setPurchaseFund`, each undoable; unticking one of several in Lists asks "Only X" or "None of the
+N". `test/unit/purchase.test.ts` checks every figure (month, hisaab, pot) after each step.
+
 ## Pots (`pages/Pot.tsx`, `lib/pots.ts`, `components/forms/PotEditors.tsx`, core's `pots.ts`)
 
 Envelope budgeting, the same as the phone's (myApp's docs/ARCHITECTURE.md → Pots): a `pot` record

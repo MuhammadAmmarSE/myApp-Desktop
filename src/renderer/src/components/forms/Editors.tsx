@@ -1,7 +1,7 @@
 // The editor drawer: one place where any record is added or changed, from any page (and from
 // Search, the tray and the menu). It slides in from the right and leaves the page in view.
 import { useMemo, useState } from "react";
-import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, PiggyBank, ArrowRightLeft, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, PiggyBank, ArrowRightLeft, ReceiptText, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import {
   addDays,
   CAR_PAPERS,
@@ -37,9 +37,11 @@ import { removeThing, saveThing, warrantyEnd } from "@/lib/things";
 import { hhmm, money as fmtMoney, MONTHS_LONG } from "@/lib/format";
 import { navigate } from "@/lib/router";
 import { removeFund, reopenIfOwed } from "@/lib/funds";
+import { setPurchaseFund } from "@/lib/purchase";
 import { ChipRow, Form, FormFooter, RemindChips, Row2, TagsInput } from "./kit";
 import { ClientForm, DomainForm, ProjectForm, ServerForm, WorkLogForm } from "./WorkEditors";
 import { InterestForm, MediaForm, PracticeForm, WishForm, WordForm } from "./InterestEditors";
+import { PurchaseForm } from "./Purchase";
 import { PotForm, PotMoveForm, PotPicker, SplitEditor, splitAsNumbers, splitFromNumbers, splitOverNumbers } from "./PotEditors";
 import { autoSplit, suggestedPot, usePots } from "@/lib/pots";
 
@@ -70,6 +72,7 @@ const META: Record<EditKind, { icon: LucideIcon; add: string; edit: string; tone
   fund: { icon: HandCoins, add: "Money given to you to spend", edit: "Edit the hisaab" },
   pot: { icon: PiggyBank, add: "A new pot", edit: "Edit the pot" },
   pot_move: { icon: ArrowRightLeft, add: "Move money", edit: "Move money" },
+  purchase: { icon: ReceiptText, add: "Bought together", edit: "Bought together" },
 };
 
 const undoToast = (text: string, rec: Rec) => toast.undo(text, () => useRecords.getState().restore(rec));
@@ -191,13 +194,19 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
   const fundChoices = funds.filter((f) => !f.data.closed || f.id === fundId);
   // opened to mark it bought: the price comes first
   const buying = !!preset?.buying;
-  const linked = !!rec?.data.money_id;
+  // its purchase, if it's still in Money (one deleted there leaves it without a price), and how many
+  // things were bought together in it
+  const allItems = useList("item");
+  const allMoney = useList("money");
+  const purchase = rec?.data.money_id ? allMoney.find((m) => m.id === rec.data.money_id) : undefined;
+  const together = purchase ? allItems.filter((i) => i.data.money_id === purchase.id).length : 0;
+  const linked = !!purchase;
   const ok = !!name.trim();
   const save = () => {
     if (!ok) return;
     const s = useRecords.getState();
-    let money_id = rec?.data.money_id ?? null;
-    const price = paid && paid > 0 ? paid : null;
+    let money_id = linked ? rec?.data.money_id ?? null : null;
+    const price = paid && paid > 0 && !(together > 1) ? paid : null;
     if (price && !money_id)
       money_id = s.create("money", {
         type: "expense",
@@ -209,7 +218,8 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
         account: "cash",
         ...(fund ? { paid_from: fund.id } : {}),
       }).id;
-    else if (money_id && (rec?.data.fund_id || "") !== fundId) s.update<"money">(money_id, { paid_from: fundId || null });
+    // moved to (or off) someone's money: its cost moves with it, and everything bought together in it
+    else if (money_id && (rec?.data.fund_id || "") !== fundId) setPurchaseFund(money_id, fundId || null);
     const done = !!price || buying;
     const data: Partial<ItemData> = {
       name: name.trim(),
@@ -230,7 +240,7 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
     if (fundId) reopenIfOwed(fundId);
     if (rec?.data.fund_id && rec.data.fund_id !== fundId) reopenIfOwed(rec.data.fund_id);
     toast.success(
-      price && !rec?.data.money_id
+      price && !linked
         ? fund
           ? `Bought with ${fund.data.from}'s money`
           : "Bought, and added to Money"
@@ -264,6 +274,11 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
       {buying && (
         <Field label={`What did ${name || "it"} cost?`} hint={fund ? `It comes off ${fund.data.from}'s hisaab, not your spending. Leave it empty to add the price later.` : "Leave it empty to add the price later."}>
           <NumberInput size="lg" value={paid} onChange={setPaid} placeholder="0" autoFocus disabled={linked} aria-label="Price paid" />
+          {!linked && rec && (
+            <button type="button" className="mt-2 text-[12.5px] text-accent-text hover:underline" onClick={() => useUI.getState().edit("purchase", null, { picked: [rec.id] })}>
+              Bought it with other things? One price for all
+            </button>
+          )}
         </Field>
       )}
       <div className="grid grid-cols-[1fr_110px] gap-3">
@@ -316,7 +331,17 @@ function ItemForm({ rec, preset, close }: FormProps<"item">) {
       {!buying && (
         <Field
           label="Bought it? What it cost"
-          hint={linked ? (rec?.data.fund_id ? "Already on the hisaab." : "Already in Money.") : fund ? `Saving a price marks it bought and puts it on ${fund.data.from}'s hisaab.` : `Saving a price marks it bought and adds it to Money (${currency}).`}
+          hint={
+            together > 1 && purchase
+              ? `Bought together with ${together - 1 === 1 ? "1 other" : `${together - 1} others`} for ${fmtMoney(purchase.data.amount, purchase.data.currency)}, ${rec?.data.fund_id ? "on the hisaab" : "in Money"}.${fundChoices.length ? " Whose money changes for all of them." : ""}`
+              : linked
+                ? rec?.data.fund_id
+                  ? "Already on the hisaab."
+                  : "Already in Money."
+                : fund
+                  ? `Saving a price marks it bought and puts it on ${fund.data.from}'s hisaab.`
+                  : `Saving a price marks it bought and adds it to Money (${currency}).`
+          }
         >
           <NumberInput value={paid} onChange={setPaid} placeholder="0" disabled={linked} aria-label="Price paid" />
         </Field>
@@ -1316,6 +1341,7 @@ const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   fund: FundForm,
   pot: ({ rec, close }) => <PotForm rec={rec} close={close} />,
   pot_move: ({ preset, close }) => <PotMoveForm preset={preset} close={close} />,
+  purchase: ({ preset, close }) => <PurchaseForm preset={preset} close={close} />,
 };
 
 export function EditorHost() {

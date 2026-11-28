@@ -759,4 +759,79 @@ ok("a hisaab: what you bought yesterday with your own money, put on it afterward
   assert.strictEqual(c.fundAfter(fund, c.fundSummary(fund, money), 6000, "PKR"), "Mother would owe you Rs 1,000");
   assert.strictEqual(c.onFund(moved[0].data, null).paid_from, null, "and back as your own");
 });
+ok("five vegetables bought together for one price: one expense, every item on it, nothing counted twice", () => {
+  const T = "2026-11-28";
+  const at = Date.parse(`${T}T09:00:00`);
+  const it = (id, name, data) => ({ id, created_at: 1, updated_at: 1, deleted: 0, data: Object.assign({ name, list: "grocery", mode: "store", today: true, done: false }, data) });
+  const veg = [it("v1", "Tomatoes", { qty: "1 kg" }), it("v2", "Onions"), it("v3", "Potatoes", { done: true, done_at: at }), it("v4", "Peas"), it("v5", "Spinach")];
+  const other = [it("o1", "Shirt", { list: "shopping", today: false }), it("o2", "Milk", { done: true, done_at: at, money_id: "m-milk", price: 200 }), it("o3", "Old", { done: true, done_at: at - 30 * 86400000 })];
+  const money = [{ id: "m-milk", data: { type: "expense", amount: 200, currency: "PKR", category: "Groceries", date: T } }];
+  // what can be priced: bought without a price first, then today's list, then the rest; never one already priced or long ago
+  const can = c.buyableItems(veg.concat(other), money, { today: T });
+  assert.deepStrictEqual(can.map((i) => i.id), ["v3", "v2", "v4", "v5", "v1", "o1"]);
+  assert.strictEqual(c.itemsNote(veg), "Tomatoes (1 kg), Onions, Potatoes, Peas and Spinach");
+  assert.strictEqual(c.itemsNote(veg.concat(veg), 6), "Tomatoes (1 kg), Onions, Potatoes, Peas, Spinach and 5 more");
+  const d = c.purchaseData(veg, { amount: 1000, currency: "PKR", date: T, account: "cash" });
+  assert.deepStrictEqual([d.type, d.amount, d.category, d.account, d.note, d.paid_from, d.pot_id], ["expense", 1000, "Groceries", "cash", "Potatoes, Tomatoes (1 kg), Onions, Peas and Spinach", undefined, undefined], "added together: the one already ticked first, then as listed");
+  // ticked ones follow the order they were ticked, whatever order they came in
+  const tickedVeg = veg.map((i, n) => Object.assign({}, i, { data: Object.assign({}, i.data, { done: true, done_at: at + n * 1000 }) }));
+  assert.strictEqual(c.purchaseData(tickedVeg.slice().reverse(), { amount: 1, currency: "PKR", date: T }).note, "Tomatoes (1 kg), Onions, Potatoes, Peas and Spinach");
+  const added = veg.map((i, n) => Object.assign({}, i, { created_at: 10 + n, data: Object.assign({}, i.data, { done: true, done_at: at + (5 - n) * 1000 }) }));
+  assert.strictEqual(c.purchaseData(added.slice().reverse(), { amount: 1, currency: "PKR", date: T }).note, "Tomatoes (1 kg), Onions, Potatoes, Peas and Spinach", "as added to the list");
+  // one off the purchase: the note loses it (in any order), a note you wrote stays
+  assert.strictEqual(c.noteWithout(d.note, veg, veg.filter((i) => i.id !== "v4")), "Potatoes, Tomatoes (1 kg), Onions and Spinach");
+  assert.strictEqual(c.noteWithout("Sabzi from the market", veg, veg.slice(1)), null);
+  assert.strictEqual(c.noteWithout(d.note, veg, []), null);
+  assert.strictEqual(c.purchaseData([other[0]], { amount: 1500, currency: "PKR", date: T }).category, "Shopping");
+  assert.strictEqual(c.purchaseData(veg, { amount: 1000, currency: "PKR", date: T, fundId: "f1", potId: "p1" }).pot_id, undefined, "their money is in no pot");
+  // saved: one expense, the five on it, no price of their own; the month counts 1,000 once
+  const m = { id: "m-veg", data: d };
+  const items = veg.map((i) => Object.assign({}, i, { data: c.boughtData(i, m.id, null, at + 1000) })).concat(other);
+  assert.ok(items.slice(0, 5).every((i) => i.data.done && i.data.money_id === "m-veg" && i.data.price === null));
+  assert.strictEqual(items[2].data.done_at, at, "already bought: it keeps when");
+  assert.strictEqual(c.monthTotals([m].concat(money), "2026-11", "PKR").spent, 1200);
+  assert.deepStrictEqual(c.boughtWith(items[0], items).map((i) => i.id), ["v2", "v3", "v4", "v5"]);
+  assert.strictEqual(c.itemsOfMoney("m-veg", items).length, 5);
+  assert.deepStrictEqual(c.buyableItems(items, [m].concat(money), { today: T }).map((i) => i.id), ["o1"], "nothing left to price");
+  // the purchase deleted in Money: they're bought without a price again, and can be priced again
+  assert.deepStrictEqual(c.buyableItems(items, money, { today: T }).map((i) => i.id).sort(), ["o1", "v1", "v2", "v3", "v4", "v5"]);
+  assert.strictEqual(c.perItem(1000, 5), 200);
+  assert.strictEqual(c.sharedFund([it("a", "A", { fund_id: "f1" }), it("b", "B", { fund_id: "f1" })]), "f1");
+  assert.strictEqual(c.sharedFund([it("a", "A", { fund_id: "f1" }), it("b", "B")]), null);
+});
+ok("one price for several on a hisaab: what's left, the message to send, and a deleted purchase", () => {
+  const fund = { id: "f1", data: { from: "Mother", purpose: "Groceries", amount: 5000, date: "2026-11-28", moves: [] } };
+  const it = (id, name) => ({ id, data: { name, list: "grocery", mode: "store", today: true, done: true, money_id: "m1", fund_id: "f1" } });
+  const items = [it("a", "Tomatoes"), it("b", "Onions"), it("c", "Peas")];
+  const money = [{ id: "m1", created_at: 1, data: { type: "expense", amount: 1000, currency: "PKR", category: "Groceries", date: "2026-11-28", paid_from: "f1", note: "Tomatoes, Onions and Peas" } }];
+  const s = c.fundSummary(fund, money, items);
+  assert.deepStrictEqual([s.spent, s.left, s.unpriced.length], [1000, 4000, 0]);
+  const text = c.hisaabText(fund, s, { currency: "PKR", today: "2026-11-28", items });
+  assert.ok(text.includes("- Tomatoes, Onions and Peas, 28 Nov: Rs 1,000"), text);
+  assert.strictEqual(c.monthTotals(c.ownMoney(money), "2026-11", "PKR").spent, 0, "her money, not mine");
+  // deleted in Money: off the hisaab, and the three are bought without a price again
+  const gone = c.fundSummary(fund, [], items);
+  assert.deepStrictEqual([gone.spent, gone.left, gone.unpriced.map((i) => i.id)], [0, 5000, ["a", "b", "c"]]);
+});
+ok("the assistant proposes a purchase of several list items for one price", () => {
+  const recs = {
+    v1: { kind: "item", data: { name: "Tomatoes", list: "grocery", mode: "store", today: true, done: true, fund_id: "f1" } },
+    v2: { kind: "item", data: { name: "Onions", list: "grocery", mode: "store", today: true, done: false, fund_id: "f1" } },
+    v3: { kind: "item", data: { name: "Milk", list: "grocery", mode: "store", today: true, done: true, money_id: "m1" } },
+    m1: { kind: "money", data: { type: "expense", amount: 200, currency: "PKR", category: "Groceries", date: "2026-11-28" } },
+    f1: { kind: "fund", data: { from: "Mother", purpose: "Groceries", amount: 5000, date: "2026-11-28" } },
+    p1: { kind: "pot", data: { name: "Personal", type: "spend" } },
+  };
+  const ctx = { today: "2026-11-28", get: (id) => recs[id] || null };
+  const r = c.cleanChange({ op: "buy", ids: ["v1", "v2", "v1"], amount: "1,000", date: "2026-11-27" }, ctx);
+  assert.deepStrictEqual(r.change, { op: "buy", kind: "item", ids: ["v1", "v2"], amount: 1000, date: "2026-11-27", account: "cash", fund: "f1", title: "Tomatoes and Onions" }, "whose money: the one they're marked for");
+  assert.strictEqual(c.cleanChange({ op: "buy", ids: ["v1", "v2"], amount: 1000, paid_from: "mine", pot_id: "p1", account: "bank" }, ctx).change.fund, null);
+  assert.strictEqual(c.cleanChange({ op: "buy", ids: ["v1", "v2"], amount: 1000, paid_from: "mine", pot_id: "p1" }, ctx).change.pot_id, "p1");
+  assert.strictEqual(c.cleanChange({ op: "buy", ids: ["v1"], amount: 1000, pot_id: "p1" }, ctx).change.pot_id, undefined, "their money is in no pot");
+  assert.ok(/already has its price/.test(c.cleanChange({ op: "buy", ids: ["v1", "v3"], amount: 1000 }, ctx).error));
+  assert.ok(/no list item/.test(c.cleanChange({ op: "buy", ids: ["f1"], amount: 1000 }, ctx).error));
+  assert.ok(/above 0/.test(c.cleanChange({ op: "buy", ids: ["v1"], amount: 0 }, ctx).error));
+  const w = c.describeChange(r.change, { currency: "PKR", today: "2026-11-28", fundName: "Mother's money" });
+  assert.deepStrictEqual(w, { verb: "Bought together", title: "Tomatoes and Onions", detail: "2 items for Rs 1,000 · from Mother's money · Yesterday" });
+});
 console.log(`core: ${n} checks passed`);

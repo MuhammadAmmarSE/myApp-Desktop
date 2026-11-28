@@ -1,7 +1,7 @@
 // Money someone gave you to spend for them (a hisaab): the sums come from core (fundSummary), these
 // are the computer's changes to it (the same as the phone's). Every change goes through the record store and can be undone.
 import { useMemo } from "react";
-import { fundCategory, fundSummary, isoDate, onFund, withMove, type FundData, type FundMove, type FundMoveType, type FundSummary, type Rec } from "@myapp/core";
+import { fundCategory, fundSummary, isoDate, itemsOfMoney, onFund, withMove, type FundData, type FundMove, type FundMoveType, type FundSummary, type Rec } from "@myapp/core";
 import { useList, useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 
@@ -106,17 +106,18 @@ export function reopenIfOwed(fundId: string) {
   if (s.left !== 0 || s.toBuy.length) useRecords.getState().update<"fund">(fund.id, { closed: false, closed_on: null });
 }
 
-// a purchase off a hisaab: the list item it came from goes back to "price not noted"
+// a purchase off a hisaab: the list items it came from (one, or several bought together) go back
+// to "price not noted"
 export function removeSpend(m: Rec<"money">): () => void {
   const s = useRecords.getState();
-  const item = s.lists.item.find((i) => i.data.money_id === m.id);
+  const items = itemsOfMoney(m.id, s.lists.item as Rec<"item">[]);
   s.remove(m.id);
-  if (item) s.update<"item">(item.id, { money_id: null, price: null });
+  for (const item of items) s.update<"item">(item.id, { money_id: null, price: null });
   if (m.data.paid_from) reopenIfOwed(m.data.paid_from);
   return () => {
     const st = useRecords.getState();
     st.restore(m);
-    if (item) st.update<"item">(item.id, { money_id: m.id, price: item.data.price });
+    for (const item of items) st.update<"item">(item.id, { money_id: m.id, price: item.data.price });
   };
 }
 
@@ -131,8 +132,8 @@ export function moveOntoFund(fundId: string, ids: string[]): () => void {
     if (!m || m.deleted || m.kind !== "money" || m.data.paid_from) continue;
     before.push({ id, data: m.data });
     s.update<"money">(id, () => onFund(m.data, fundId));
-    const item = s.lists.item.find((i) => i.data.money_id === id);
-    if (item) {
+    // the list items it was bought for (several, when bought together) are on the hisaab too
+    for (const item of itemsOfMoney(id, s.lists.item as Rec<"item">[])) {
       items.push({ id: item.id, fund_id: item.data.fund_id });
       s.update<"item">(item.id, { fund_id: fundId });
     }
@@ -151,12 +152,12 @@ export function takeOffFund(m: Rec<"money">): () => void {
   const fundId = m.data.paid_from;
   const before = m.data;
   s.update<"money">(m.id, () => onFund(before, null));
-  const item = s.lists.item.find((i) => i.data.money_id === m.id && i.data.fund_id === fundId);
-  if (item) s.update<"item">(item.id, { fund_id: null });
+  const items = itemsOfMoney(m.id, s.lists.item as Rec<"item">[]).filter((i) => i.data.fund_id === fundId);
+  for (const item of items) s.update<"item">(item.id, { fund_id: null });
   if (fundId) reopenIfOwed(fundId);
   return () => {
     const st = useRecords.getState();
     st.update<"money">(m.id, () => before);
-    if (item) st.update<"item">(item.id, { fund_id: fundId || null });
+    for (const item of items) st.update<"item">(item.id, { fund_id: fundId || null });
   };
 }

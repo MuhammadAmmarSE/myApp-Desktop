@@ -97,6 +97,7 @@ export const FEATURES: Feature[] = [
     how: [
       'Commas add several at once ("milk, eggs, bread").',
       "A price paid can go straight into Money.",
+      'Bought several for one price (five vegetables for 1,000)? "One price for several": tick them, type what it all cost, and it\'s saved once in Money (or on the hisaab whose money paid), with every item marked bought. Unticking one later asks whether only that one wasn\'t bought (the price stays for the rest) or none were (the price comes out).',
       "Phone: swipe right when bought, left to delete; Regulars put an item back on today's list in one tap. Computer: drag between columns, copy today's list.",
     ],
     kinds: ["item"],

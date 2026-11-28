@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { cleanChange, isoDate, newRecordData, nextPotColor, updatedRecordData, type Change, type ProposalItem, type Rec } from "@myapp/core";
 import { movePot } from "@/lib/pots";
+import { buyTogether } from "@/lib/purchase";
 import { api } from "@/lib/api";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
@@ -80,6 +81,12 @@ function apply(change: Change): { ok: true; id: string; undo: () => void } | { o
     const undo = movePot(ch.from, ch.to, ch.amount, ch.note, ch.date);
     if (!undo) return { ok: false, why: "That pot isn't here any more." };
     return { ok: true, id: (ch.from || ch.to) as string, undo };
+  }
+  // several list items bought together for one price
+  if (ch.op === "buy") {
+    const r = buyTogether(ch.ids, { amount: ch.amount, date: ch.date, account: ch.account, fundId: ch.fund, potId: ch.pot_id, note: ch.note });
+    if (!r) return { ok: false, why: "Those items aren't on your list any more, or they have a price already." };
+    return { ok: true, id: r.money.id, undo: r.undo };
   }
   const was = s.byId[ch.id] as Rec;
   if (ch.op === "update") {

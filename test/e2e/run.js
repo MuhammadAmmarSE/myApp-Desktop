@@ -426,6 +426,100 @@ async function scenario(name, fn, always = false) {
     await win.getByTestId("fund-standing").getByText("Rs 4,070", { exact: true }).waitFor();
   });
 
+  await scenario("one price for several: five vegetables for 1,000 picked with Ctrl-click, one taken back, none, bought again by bank; and on a hisaab", async () => {
+    const month = new Date().toISOString().slice(0, 7);
+    const spent = async () => (await live("money")).filter((r) => r.data.type === "expense" && !r.data.paid_from && String(r.data.date).startsWith(month)).reduce((n, r) => n + Number(r.data.amount), 0);
+    const VEG = ["Tomatoes", "Onions", "Potatoes", "Peas", "Spinach"];
+    // the names a purchase's note lists ("Onions, Peas and Tomatoes")
+    const named = (note) => String(note || "").split(/, | and /).sort().join("|");
+    const before = await spent();
+    await go("/lists");
+    const add = win.getByLabel("Buy today: new item");
+    await add.fill(VEG.join(", "));
+    await add.press("Enter");
+    const ids = await until("five on today's list", async () => {
+      // the newest of each name (an older Tomatoes may be on the list already)
+      const items = (await live("item")).filter((r) => VEG.includes(r.data.name) && !r.data.done).sort((a, b) => b.created_at - a.created_at);
+      return VEG.every((n) => items.find((r) => r.data.name === n)) && VEG.map((n) => items.find((r) => r.data.name === n).id);
+    });
+    // pick all five with Ctrl-click, and price them together
+    const rowOf = (i) => win.locator(`[data-item="${ids[i]}"]`);
+    for (let i = 0; i < 5; i++) await rowOf(i).click({ modifiers: ["Control"] });
+    await win.getByTestId("bulk-one-price").click();
+    await dialog().getByLabel("What it all cost").fill("1000");
+    await dialog().getByTestId("purchase-summary").getByText("5 things for Rs 1,000 · about Rs 200 each").waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "purchase.png") });
+    await saveDialog();
+    const m = await until("one purchase for all five", async () => {
+      const all = await live("money");
+      const hit = all.find((r) => r.data.amount === 1000 && named(r.data.note) === VEG.slice().sort().join("|"));
+      const items = (await live("item")).filter((r) => ids.includes(r.id));
+      return hit && items.every((i) => i.data.done && i.data.money_id === hit.id && !i.data.price) && hit;
+    });
+    if ((await spent()) !== before + 1000) throw new Error(`spent ${before} -> ${await spent()}, not +1000`);
+    // Peas weren't bought: only Peas comes back; the 1,000 stays for the other four
+    await win.getByRole("button", { name: "Show", exact: true }).click();
+    await win.locator("[data-bought]").filter({ hasText: "Peas" }).getByRole("button", { name: "Not bought" }).click();
+    await dialog().getByText("It was bought together with 4 other things for Rs 1,000.").waitFor();
+    await dialog().getByRole("button", { name: "Only Peas" }).click();
+    await until("peas back, the 1,000 kept for four", async () => {
+      const peas = (await live("item")).find((r) => r.id === ids[3]);
+      const hit = (await live("money")).find((r) => r.id === m.id);
+      return peas && !peas.data.done && !peas.data.money_id && hit && hit.data.amount === 1000 && named(hit.data.note) === VEG.filter((n) => n !== "Peas").sort().join("|");
+    });
+    if ((await spent()) !== before + 1000) throw new Error("taking one back changed what was spent");
+    // none of them were: all four back on the list, the 1,000 out of Money
+    await win.locator("[data-bought]").filter({ hasText: "Onions" }).getByRole("button", { name: "Not bought" }).click();
+    await dialog().getByRole("button", { name: "None of the 4" }).click();
+    await until("all back on the list, the purchase gone", async () => {
+      const items = (await live("item")).filter((r) => ids.includes(r.id));
+      return !(await live("money")).find((r) => r.id === m.id) && items.every((i) => !i.data.done && !i.data.money_id);
+    });
+    if ((await spent()) !== before) throw new Error("the 1,000 is still counted");
+    // bought after all, ticked without a price: one price for them from "bought without a price", by bank
+    for (let i = 0; i < 5; i++) await rowOf(i).getByRole("checkbox").first().click();
+    await win.getByTestId("unpriced").getByText(/\d+ bought without a price/).waitFor();
+    await win.getByTestId("unpriced").click();
+    // only the five (anything else bought without a price stays as it is)
+    const ticked = dialog().locator('[role="checkbox"][aria-checked="true"]');
+    for (const label of await ticked.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))) if (!VEG.includes(label)) await dialog().getByRole("checkbox", { name: label, exact: true }).click();
+    if ((await ticked.count()) !== 5) throw new Error(`${await ticked.count()} ticked, not the five`);
+    await dialog().getByLabel("What it all cost").fill("800");
+    await dialog().getByRole("tab", { name: "Bank" }).click();
+    await saveDialog();
+    await until("800 by bank for the five", async () => {
+      const hit = (await live("money")).find((r) => r.data.amount === 800 && r.data.account === "bank");
+      const items = (await live("item")).filter((r) => ids.includes(r.id));
+      return hit && items.every((i) => i.data.done && i.data.money_id === hit.id);
+    });
+    if ((await spent()) !== before + 800) throw new Error("800 not counted once");
+    // on a hisaab: my aunt gave 3,000; mangoes, bananas and grapes for 900 of it
+    await go("/money");
+    await win.getByRole("button", { name: "Someone gave me money to spend" }).click();
+    await dialog().getByLabel("How much they gave").fill("3000");
+    await dialog().getByLabel("Who gave it").fill("Aunt");
+    await dialog().getByRole("button", { name: "Groceries", exact: true }).click();
+    await saveDialog();
+    const fund = await until("her hisaab", async () => (await live("fund")).find((r) => r.data.from === "Aunt" && r.data.amount === 3000));
+    // a new hisaab opens by itself
+    await win.getByTestId("fund").waitFor();
+    await win.getByLabel("Something to buy").fill("Mangoes, Bananas, Grapes");
+    await win.getByLabel("Something to buy").press("Enter");
+    await until("three on her list", async () => (await live("item")).filter((r) => r.data.fund_id === fund.id).length === 3);
+    await win.getByTestId("fund-one-price").click();
+    await dialog().getByRole("button", { name: "Tick all 3" }).click();
+    await dialog().getByLabel("What it all cost").fill("900");
+    await dialog().getByTestId("purchase-summary").getByText(/Aunt's money: leaves Rs 2,100 with you/).waitFor();
+    await saveDialog();
+    await win.getByTestId("fund-standing").getByText("Rs 2,100", { exact: true }).waitFor();
+    await until("900 on her hisaab, the three bought", async () => {
+      const hit = (await live("money")).find((r) => r.data.paid_from === fund.id && r.data.amount === 900);
+      return hit && (await live("item")).filter((r) => r.data.fund_id === fund.id).every((i) => i.data.done && i.data.money_id === hit.id);
+    });
+    await win.getByTestId("fund-spends").getByText("3 things from the list").waitFor();
+    if ((await spent()) !== before + 800) throw new Error("her money counted as mine");
+  });
+
   await scenario("pots: an income given jobs, spending out of a pot, money moved and taken back, and pots from Capture", async () => {
     await go("/money");
     const pots = win.getByTestId("pots");

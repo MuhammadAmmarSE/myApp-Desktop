@@ -4,6 +4,7 @@
 import { EXPENSE_CATEGORIES, type FundData, type FundMove, type FundMoveType, type ItemData, type MoneyData } from "./kinds";
 import { shortDate, money as moneyWord } from "./format";
 import { addDays } from "./dates";
+import { inListOrder, itemLabel, itemsNote } from "./purchase";
 
 type R<D> = { id: string; data: D; created_at?: number };
 
@@ -49,6 +50,8 @@ export function fundSummary<M extends Mo, I extends It>(fund: R<FundData>, money
   const covered = round(sum("covered"));
   const left = round(received - spent - returned - kept + paidBack + covered);
   const mine = items.filter((i) => i.data.fund_id === fund.id);
+  // an item whose purchase was deleted has no price again
+  const live = new Set(money.filter((m) => !(m as { deleted?: unknown }).deleted).map((m) => m.id));
   return {
     received,
     spent,
@@ -60,7 +63,7 @@ export function fundSummary<M extends Mo, I extends It>(fund: R<FundData>, money
     state: left > 0 ? "holding" : left < 0 ? "over" : "even",
     spends,
     toBuy: mine.filter((i) => !i.data.done),
-    unpriced: mine.filter((i) => i.data.done && !i.data.money_id),
+    unpriced: mine.filter((i) => i.data.done && (!i.data.money_id || !live.has(i.data.money_id))),
   };
 }
 
@@ -98,7 +101,10 @@ export function hisaabText(fund: R<FundData>, s: FundSummary<Mo, It>, opts: { cu
   const cur = fund.data.currency || opts.currency;
   const m = (n: number) => moneyWord(n, cur);
   const day = (d: string) => shortDate(d, opts.today);
-  const nameOf = new Map((opts.items || []).filter((i) => i.data.money_id).map((i) => [i.data.money_id as string, i.data.qty ? `${i.data.name} (${i.data.qty})` : i.data.name]));
+  // what each purchase was: its item, or every item bought together in it
+  const byMoney = new Map<string, It[]>();
+  for (const i of opts.items || []) if (i.data.money_id) byMoney.set(i.data.money_id, (byMoney.get(i.data.money_id) || []).concat([i]));
+  const nameOf = new Map(Array.from(byMoney.entries()).map(([id, list]) => [id, list.length > 1 ? itemsNote(inListOrder(list), 12) : itemLabel(list[0])]));
   const lines: string[] = [];
   lines.push(`Hisaab: ${fund.data.purpose || "money"}, from ${fund.data.from || "you"}`);
   lines.push(`Received ${day(fund.data.date)}: ${m(fund.data.amount)}`);

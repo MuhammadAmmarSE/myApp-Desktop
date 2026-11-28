@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Check, Copy, HandCoins, History, Pencil, Plus, RotateCcw, ShoppingBasket, Trash2, Undo2, UserRound, Wallet } from "lucide-react";
+import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Check, Copy, HandCoins, History, Pencil, Plus, ReceiptText, RotateCcw, ShoppingBasket, Trash2, Undo2, UserRound, Wallet } from "lucide-react";
 import { fundCandidates, fundSummary, hisaabText, isoDate, type FundMoveType, type Rec } from "@myapp/core";
 import { Button, Card, CardTitle, Dialog, Empty, Field, IconButton, Input, NumberInput, Tag, toast, useContextMenu } from "@/components/ui";
 import { useList, useRecords } from "@/store/records";
@@ -174,7 +174,18 @@ export default function Fund({ params }: { params: Record<string, string> }) {
 
             <motion.div {...rise(2)}>
               <Card>
-                <CardTitle title="Still to buy" icon={ShoppingBasket} sub={s.toBuy.length ? `${s.toBuy.length} on the list` : undefined} />
+                <CardTitle
+                  title="Still to buy"
+                  icon={ShoppingBasket}
+                  sub={s.toBuy.length ? `${s.toBuy.length} on the list` : undefined}
+                  action={
+                    s.toBuy.length + s.unpriced.length > 1 ? (
+                      <Button size="xs" variant="ghost" icon={ReceiptText} onClick={() => edit("purchase", null, { fundId: fund.id, picked: s.unpriced.map((i) => i.id) })} data-testid="fund-one-price">
+                        One price for several
+                      </Button>
+                    ) : undefined
+                  }
+                />
                 <div className="mb-2 flex gap-2">
                   <div className="flex-1">
                     <Input value={toBuy} onChange={setToBuy} onKeyDown={(e) => e.key === "Enter" && addItems()} placeholder={`Something to buy with ${who}'s money (commas add several)`} aria-label="Something to buy" />
@@ -236,7 +247,13 @@ export default function Fund({ params }: { params: Record<string, string> }) {
                           }
                         >
                           <td className="whitespace-nowrap px-4 py-2 text-text2">{dayWord(m.data.date)}</td>
-                          <td className="max-w-[280px] truncate px-2 py-2">{m.data.note || m.data.category}</td>
+                          <td className="max-w-[280px] truncate px-2 py-2">
+                            {m.data.note || m.data.category}
+                            {(() => {
+                              const n = items.filter((i) => i.data.money_id === m.id).length;
+                              return n > 1 ? <span className="ml-2 text-[11.5px] text-text3">{n} things from the list</span> : null;
+                            })()}
+                          </td>
                           <td className="px-2 py-2">
                             <Tag>{m.data.category}</Tag>
                           </td>

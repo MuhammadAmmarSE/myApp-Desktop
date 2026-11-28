@@ -39,7 +39,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { describeChange, describeStep, type Kind, type Step } from "@myapp/core";
+import { describeChange, describeStep, type Kind, type Rec, type Step } from "@myapp/core";
 import { Button, Spin, Tag, toast } from "@/components/ui";
 import { decide, decisionsOf, flush, useProposals } from "@/lib/proposals";
 import { useRecords } from "@/store/records";
@@ -129,8 +129,9 @@ export function ProposalCard({ runId, step }: { runId: number; step: Step }) {
         {open.length ? <Tag tone="accent">{open.length} to decide</Tag> : <Check size={16} className="text-success" />}
       </div>
       {p.changes.map((ch, i) => {
-        const rec = ch.op === "create" || ch.op === "move" ? null : byId[ch.id];
-        const w = describeChange(ch, { currency, current: rec && !rec.deleted ? rec.data : null });
+        const rec = ch.op === "create" || ch.op === "move" || ch.op === "buy" ? null : byId[ch.id];
+        const payer = ch.op === "buy" && ch.fund ? (byId[ch.fund] as Rec<"fund"> | undefined) : undefined;
+        const w = describeChange(ch, { currency, current: rec && !rec.deleted ? rec.data : null, fundName: payer && !payer.deleted ? `${payer.data.from}'s money` : undefined });
         const Icon = KIND_ICON[ch.kind] || Sparkles;
         const d = decided[i];
         const danger = ch.op === "remove";
