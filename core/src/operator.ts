@@ -72,7 +72,8 @@ const filesOf = (list: unknown): TimelineFile[] =>
 export type OpItem =
   | { kind: "user"; id: number; text: string; whileWorking: boolean; images: number[]; files: TimelineFile[]; at: number }
   | { kind: "say"; id: number; text: string; at: number }
-  | { kind: "reply"; id: number; text: string; at: number }
+  // voiced: read aloud line by line as it was written (speech events); the app doesn't read it again
+  | { kind: "reply"; id: number; text: string; at: number; voiced?: boolean }
   | { kind: "error"; id: number; text: string; at: number }
   | { kind: "stopped"; id: number; at: number }
   | ClaudeReport
@@ -141,7 +142,7 @@ export function buildTimeline(events: OpEvent[], conversationId: number): OpItem
         break;
       case "reply":
         open = null;
-        items.push({ kind: "reply", id: e.id, text: String(d.text || ""), at: e.at });
+        items.push(Object.assign({ kind: "reply" as const, id: e.id, text: String(d.text || ""), at: e.at }, d.voiced === true ? { voiced: true } : {}));
         break;
       case "error":
         items.push({ kind: "error", id: e.id, text: String(d.text || ""), at: e.at });

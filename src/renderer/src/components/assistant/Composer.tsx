@@ -1,8 +1,9 @@
 // Where you write to the assistant. Enter sends, Shift+Enter starts a new line. Photos come by
 // pasting, dropping them on the box, or the picture button (up to four, shrunk before they go up);
 // files (a PDF, a Word or Excel file, anything) by dropping them or the paperclip. Or talk: the
-// microphone (or the talk shortcut) listens until you go quiet, your server writes down what you
-// said, and it goes out by itself after a moment unless you click Edit.
+// microphone (or the talk shortcut) listens until you go quiet and it goes out at once (straight to
+// the assistant as a recording, where the page takes it: onVoice), unless "Let me check first" is
+// on: then what you said waits in the box.
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
@@ -13,11 +14,9 @@ import { bridge } from "@/lib/bridge";
 import { attachmentId, attachmentsFromFiles, fileSize, MAX_FILES, MAX_TOTAL_BYTES, type Attachment } from "@/lib/attachments";
 import { useOperator } from "@/store/operator";
 import { useSettings } from "@/store/settings";
-import { useListen } from "@/lib/listen";
+import { useListen, type SendRecording } from "@/lib/listen";
 import { useTalkKeys, useTalkTarget } from "@/lib/talk";
 import { MicButton, MicLevel } from "./Voice";
-
-const SEND_AFTER_MS = 2500; // a spoken request waits this long for Edit before it goes
 
 // autoListen: start listening as soon as it's shown (the talk shortcut opened it). listenNow: a
 // new value listens again, quietly (your reply, after an answer was read aloud).
@@ -30,6 +29,7 @@ export function Composer({
   big,
   autoListen,
   listenNow,
+  onVoice,
 }: {
   placeholder: string;
   onSend: (text: string, photos: Photo[], files: Attachment[], byVoice: boolean) => Promise<boolean | void> | void;
@@ -39,6 +39,7 @@ export function Composer({
   big?: boolean;
   autoListen?: boolean;
   listenNow?: number;
+  onVoice?: SendRecording;
 }) {
   const [text, setText] = useState(initial || "");
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -50,13 +51,16 @@ export function Composer({
   const area = useRef<HTMLTextAreaElement>(null);
   const autoSend = useSettings((s) => s.voiceAutoSend);
   const [spoken, setSpoken] = useState(false); // what's in the box came from the microphone
-  const [countdown, setCountdown] = useState(false);
-  const voice = useListen((said) => {
-    setText((t) => (t.trim() ? `${t.trim()} ${said}` : said));
-    setSpoken(true);
-    if (autoSend) setCountdown(true);
-    else area.current?.focus();
-  });
+  const voice = useListen(
+    (said) => {
+      // "send right away": what you said goes as it is (with anything already in the box)
+      if (autoSend && !busy) return void sendNow(text.trim() ? `${text.trim()} ${said}` : said, true);
+      setText((t) => (t.trim() ? `${t.trim()} ${said}` : said));
+      setSpoken(true);
+      area.current?.focus();
+    },
+    { send: autoSend && onVoice && !photos.length && !files.length && !text.trim() ? onVoice : undefined },
+  );
   const talkKeys = useTalkKeys();
   useTalkTarget(voice.toggle);
 
@@ -126,24 +130,18 @@ export function Composer({
     }
   };
 
-  const send = async () => {
-    const t = text.trim();
-    setCountdown(false);
+  const send = () => sendNow(text, spoken);
+  async function sendNow(said: string, byVoice: boolean) {
+    const t = said.trim();
     if ((!t && !photos.length && !files.length) || busy || reading || voice.listening) return;
-    const r = await onSend(t, photos, files, spoken);
+    const r = await onSend(t, photos, files, byVoice);
     if (r !== false) {
       setText("");
       setSpoken(false);
       setPhotos([]);
       setFiles([]);
     }
-  };
-  // what you said goes out after a moment, unless you click Edit (or start typing)
-  useEffect(() => {
-    if (!countdown) return;
-    const t = setTimeout(() => void send(), SEND_AFTER_MS);
-    return () => clearTimeout(t);
-  });
+  }
   // opened by the talk shortcut: listen straight away
   const opened = useRef(false);
   useEffect(() => {
@@ -263,8 +261,7 @@ export function Composer({
             ref={area}
             value={text}
             hidden={hearing}
-            onChange={(e) => (setText(e.target.value), setSpoken(false), setCountdown(false))}
-            onFocus={() => setCountdown(false)}
+            onChange={(e) => (setText(e.target.value), setSpoken(false))}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
@@ -295,26 +292,17 @@ export function Composer({
             {busy ? <Spin size={16} /> : <ArrowUp size={18} strokeWidth={2.4} />}
           </button>
         </div>
-        {/* what you said, about to go: in the hint row, so nothing moves */}
+        {/* how to send, and where photos and files go */}
         <div className="flex h-6 items-center gap-3 px-4 pb-2 text-[11px] text-text3">
-          {countdown ? (
-            <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-[12px] text-accent-text" data-testid="voice-countdown" role="status">
-              Sending what you said…
-              <button type="button" onClick={() => (setCountdown(false), area.current?.focus())} className="rounded-[6px] bg-surface px-2 py-px text-[11.5px] font-medium text-text hairline hover:bg-hover">
-                Edit
-              </button>
-            </motion.span>
-          ) : (
-            <span>
-              <Kbd>↵</Kbd> send · <Kbd>⇧ ↵</Kbd> new line
-              {talkKeys ? (
-                <>
-                  {" "}
-                  · <Kbd>{talkKeys}</Kbd> talk
-                </>
-              ) : null}
-            </span>
-          )}
+          <span>
+            <Kbd>↵</Kbd> send · <Kbd>⇧ ↵</Kbd> new line
+            {talkKeys ? (
+              <>
+                {" "}
+                · <Kbd>{talkKeys}</Kbd> talk
+              </>
+            ) : null}
+          </span>
           <span className="ml-auto">Paste photos, or drop photos and files</span>
         </div>
       </div>

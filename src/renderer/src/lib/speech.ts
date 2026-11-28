@@ -74,13 +74,16 @@ const stopAudio = () => {
   audio = null;
 };
 
-function play(src: string, my: number) {
+// onEnd: what comes next (the next line of an answer) instead of it being over
+function play(src: string, my: number, onEnd?: (ended: boolean) => void) {
   stopAudio();
   const a = new Audio(src);
   audio = a;
   const over = (ended: boolean) => () => {
     if (audio === a) audio = null;
-    if (my === turn) useSpeaking.setState(ended ? { speaking: false, finished: Date.now() } : { speaking: false });
+    if (my !== turn) return;
+    if (onEnd) onEnd(ended);
+    else useSpeaking.setState(ended ? { speaking: false, finished: Date.now() } : { speaking: false });
   };
   a.onended = over(true);
   a.onerror = over(false);
@@ -134,8 +137,92 @@ export function speak(text: string, opts: { voiceId?: string } = {}) {
   return true;
 }
 
+// ---- an answer read aloud as it's written: the server names each line as soon as it's written
+// ("speech" events) and makes its audio; lines play in order, the next fetched while one plays
+
+type Line = { n: number; clip: string; text: string };
+type Queued = { text: string; clip: string; audio?: Promise<string | null> };
+let lines: { my: number; got: Map<number, Queued>; next: number; busy: boolean; closed: boolean } | null = null;
+
+const linesOver = (my: number, ended: boolean) => {
+  if (my !== turn) return;
+  lines = null;
+  useSpeaking.setState(ended ? { speaking: false, finished: Date.now() } : { speaking: false });
+};
+
+const fetchAhead = (q: NonNullable<typeof lines>) => {
+  for (const n of [q.next, q.next + 1]) {
+    const item = q.got.get(n);
+    if (item && !item.audio)
+      item.audio = api<{ audio: string; type: string }>("GET", `/voice/clip/${encodeURIComponent(item.clip)}`, undefined, { timeoutMs: 35000 })
+        .then((r) => (r.audio ? `data:${r.type || "audio/mpeg"};base64,${r.audio}` : null))
+        .catch(() => null);
+  }
+};
+
+function nextLine() {
+  const q = lines;
+  if (!q || q.busy || q.my !== turn) return;
+  const item = q.got.get(q.next);
+  if (!item) {
+    if (q.closed) linesOver(q.my, true);
+    return;
+  }
+  q.busy = true;
+  fetchAhead(q);
+  void (item.audio as Promise<string | null>).then((src) => {
+    if (lines !== q || q.my !== turn) return;
+    const done = (ended: boolean) => {
+      if (lines !== q) return;
+      if (!ended) return linesOver(q.my, false);
+      q.busy = false;
+      q.got.delete(q.next);
+      q.next++;
+      nextLine();
+    };
+    if (src) return play(src, q.my, done);
+    // the server couldn't make this one: this computer's voice reads it
+    const s = window.speechSynthesis;
+    if (!s) return done(true);
+    const u = new SpeechSynthesisUtterance(item.text);
+    u.onend = () => done(true);
+    u.onerror = () => done(true);
+    s.speak(u);
+  });
+}
+
+// a line of the answer being read aloud as it's written: played in order
+export function speakLine(line: Line) {
+  if (!lines || lines.my !== turn) {
+    const my = ++turn;
+    stopAudio();
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {
+      /* nothing to stop */
+    }
+    lines = { my, got: new Map(), next: line.n, busy: false, closed: false };
+  }
+  const q = lines;
+  if (q.got.has(line.n) || line.n < q.next) return;
+  q.got.set(line.n, { text: line.text, clip: line.clip });
+  fetchAhead(q);
+  useSpeaking.setState({ speaking: true });
+  nextLine();
+}
+
+// the answer is finished: once its last line has played, it's over (and it listens for a reply)
+export function linesDone() {
+  const q = lines;
+  if (!q || q.my !== turn) return false;
+  q.closed = true;
+  if (!q.busy && !q.got.size) linesOver(q.my, true);
+  return true;
+}
+
 export const hush = () => {
   turn++;
+  lines = null;
   stopAudio();
   try {
     window.speechSynthesis?.cancel();

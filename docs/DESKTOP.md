@@ -199,15 +199,19 @@ and only for Redline's own pages (`index.ts`, the permission handler); a Mac ask
 (`bridge.mic.access`, with the words in electron-builder.yml, and the audio-input entitlement in
 build/entitlements.mac.plist), Windows has its own privacy switch. An `AnalyserNode` gives the
 loudness ten times a second to `voiceActivity.ts`, which learns the room's noise and says when
-you've spoken and gone quiet for 1.5 s (or said nothing for 7 s, or talked for 90 s); the meter
+you've spoken and gone quiet for 1 s (or said nothing for 7 s, or talked for 90 s); the meter
 reads the same number. The recording goes to `/api/voice/transcribe` through the main process
 with the language and how Urdu is written (Settings), and ElevenLabs Scribe on your server writes
 it down. Without an ElevenLabs key on the server there is no listening: this computer has no
 recogniser of its own, and the button says so. One microphone at a time (`listen.ts` `owner`);
 the Quick window lets go of it when it hides.
 
-In the assistant, what you said goes out after 2.5 s unless you click Edit or type (Settings: or it
-waits). A chat started by voice opens with `?spoken=1`; answers to spoken requests are read aloud
+In the assistant, what you said goes out as soon as you stop talking (Settings: or it waits in the
+box). With a server that takes recordings (`features` include `voice_in`), it isn't written down
+here first: `useListen`'s `send` hands the recording to the page, which posts it to
+`/operator/runs/voice` or `/operator/runs/:id/voice` (`sendSpoken` in `lib/assistant.ts`) and the
+assistant starts on it at once (not when a card waits for a spoken yes or no). A chat started by
+voice opens with `?spoken=1`; answers to spoken requests are read aloud
 (Settings → Read answers aloud: when I talk / always / never, plus the speaker button in the chat),
 and once one has been read to its end (`useSpeaking.finished`) the box listens again, quietly, for
 your reply (Settings: or stop there). Esc stops listening without sending.
@@ -238,6 +242,12 @@ and the mp3 that comes back plays from a data URL (`media-src data:`). The page 
 itself, so trying a voice in Settings reads a line in it through the server rather than playing
 ElevenLabs' sample URL. Otherwise the computer's own voices (`speechSynthesis`) read it. The key
 never leaves the server.
+
+Live (the server's `features` include `speech`): a spoken request's context carries `speech: true`
+and your voice, so the server streams the answer and makes each sentence's audio as soon as it's
+written ("speech" events, `{ n, clip, text }`). `speakLine` fetches the clip playing and the next
+(`/api/voice/clip/:id`) and plays them in order; the reply says `voiced` and `linesDone()` ends it,
+so it isn't read again. A short "One moment" comes before a lookup.
 
 ## The assistant's guide
 

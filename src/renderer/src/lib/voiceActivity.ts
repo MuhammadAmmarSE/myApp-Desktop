@@ -3,7 +3,7 @@
 // own noise as it goes, and speech is well above it. Pure, so it is tested (the phone does the same
 // with its recorder's metering).
 
-export const QUIET_MS = 1500; // quiet this long after speaking: done
+export const QUIET_MS = 1000; // quiet this long after speaking: done (a pause between words is shorter)
 export const NOTHING_MS = 7000; // nothing said this long: give up
 export const LONGEST_MS = 90000; // a long ramble is sent as it is
 

@@ -20,10 +20,10 @@ import { SentFiles } from "@/components/assistant/Files";
 import { availabilityOf, deleteChat, markChat, renameChat, useOperator, type ChatCounts, type Run } from "@/store/operator";
 import { useSettings } from "@/store/settings";
 import { api } from "@/lib/api";
-import { requestContext } from "@/lib/assistant";
+import { requestContext, sendSpoken, spokenContext, voiceInOn } from "@/lib/assistant";
 import { navigate, useQuery } from "@/lib/router";
 import { usePageKeys } from "@/lib/keys";
-import { hush, speak, useSpeaking } from "@/lib/speech";
+import { hush, linesDone, speak, speakLine, useSpeaking } from "@/lib/speech";
 import type { Photo } from "@/lib/images";
 import type { Attachment } from "@/lib/attachments";
 import { ago } from "@/lib/format";
@@ -245,7 +245,8 @@ function Home() {
   const start = async (text: string, photos: Photo[], files: Attachment[], byVoice = false) => {
     setSending(true);
     try {
-      const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), files: filesOf(files), context: { ...requestContext(), spoken: byVoice } }, { timeoutMs: timeoutFor(photos, files) });
+      const context = byVoice ? spokenContext(useSettings.getState().speakReplies || useSettings.getState().readAloud) : { ...requestContext(), spoken: false };
+      const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), files: filesOf(files), context }, { timeoutMs: timeoutFor(photos, files) });
       useOperator.getState().loadRuns();
       // said, not typed: its answer is read aloud there, and then it listens for your reply
       navigate(`/assistant/${r.run.id}${byVoice ? "?spoken=1" : ""}`);
@@ -256,6 +257,20 @@ function Home() {
     } finally {
       setSending(false);
     }
+  };
+  // what you said, straight to the assistant: your server writes it down and starts at once
+  const startByVoice = async (audio: { base64: string; type: string }) => {
+    if (!voiceInOn()) return false;
+    setSending(true);
+    const r = await sendSpoken<{ run: Run }>("/operator/runs/voice", audio, useSettings.getState().speakReplies || useSettings.getState().readAloud);
+    setSending(false);
+    if ("fallback" in r) return false;
+    if ("error" in r) toast.error(r.error);
+    else {
+      useOperator.getState().loadRuns();
+      navigate(`/assistant/${r.data.run.id}?spoken=1`);
+    }
+    return true;
   };
   const conns = op.status?.connections;
   const recent = [...op.favourites, ...op.runs.filter((r) => !r.starred)].slice(0, 6);
@@ -272,7 +287,7 @@ function Home() {
           It knows what you keep here. Changes wait for your click, risky steps for your fingerprint or password.
         </motion.p>
         <motion.div {...rise(3)}>
-          <Composer big placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus={!listen} autoListen={listen} />
+          <Composer big placeholder="e.g. Add my sister's birthday, or check why the API is slow" onSend={start} busy={sending} initial={ask} autoFocus={!listen} autoListen={listen} onVoice={startByVoice} />
         </motion.div>
         <motion.div {...rise(4)} className="mt-3 flex flex-wrap justify-center gap-1.5">
           {IDEAS.map((i) => (
@@ -452,17 +467,24 @@ function Conversation({ runId }: { runId: number }) {
     if (el) setAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   };
 
-  // read new answers aloud
+  // read new answers aloud: line by line as the server reads them while they're written ("speech"
+  // events), or the whole reply once it's in
   const readHere = useRef(false); // an answer of this chat is being read (not one elsewhere)
   useEffect(() => {
     if (!reading || since.current < 0) return;
-    for (const it of items) {
-      if (it.kind === "reply" && it.id > since.current && !spoken.current.has(it.id)) {
-        spoken.current.add(it.id);
-        if (speak(it.text)) readHere.current = true;
+    for (const e of events) {
+      if (e.id <= since.current || spoken.current.has(e.id) || (e.type !== "speech" && e.type !== "reply")) continue;
+      spoken.current.add(e.id);
+      const d = (e.data || {}) as { n?: number; clip?: string; text?: string; voiced?: boolean };
+      if (e.type === "speech" && d.clip) {
+        speakLine({ n: Number(d.n) || 0, clip: String(d.clip), text: String(d.text || "") });
+        readHere.current = true;
+      } else if (e.type === "reply") {
+        if (d.voiced && linesDone()) readHere.current = true;
+        else if (!d.voiced && speak(String(d.text || ""))) readHere.current = true;
       }
     }
-  }, [items, reading]);
+  }, [events, reading]);
 
   // a conversation by voice: once its answer has been read to its end, it listens for your reply
   // (not while it's still working, or waiting for your yes)
@@ -517,7 +539,8 @@ function Conversation({ runId }: { runId: number }) {
     }
     setSending(true);
     try {
-      const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), files: filesOf(files), context: { ...requestContext(), spoken: byVoice } }, { timeoutMs: timeoutFor(photos, files) });
+      const context = byVoice ? spokenContext(aloud ?? (readAloud || speakReplies)) : { ...requestContext(), spoken: false };
+      const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), files: filesOf(files), context }, { timeoutMs: timeoutFor(photos, files) });
       since.current = events.length ? events[events.length - 1].id : 0;
       setVoiced(byVoice);
       setAtEnd(true);
@@ -529,6 +552,24 @@ function Conversation({ runId }: { runId: number }) {
     } finally {
       setSending(false);
     }
+  };
+  // what you said, straight to the assistant: your server writes it down and it starts at once
+  // (not when a card is waiting for your spoken yes or no: that's decided here, from the words)
+  const sendRecording = async (audio: { base64: string; type: string }) => {
+    if (!voiceInOn() || openProposal()) return false;
+    setSending(true);
+    const at = events.length ? events[events.length - 1].id : 0;
+    const r = await sendSpoken<{ steering: boolean }>(`/operator/runs/${runId}/voice`, audio, aloud ?? (readAloud || speakReplies));
+    setSending(false);
+    if ("fallback" in r) return false;
+    if ("error" in r) toast.error(r.error);
+    else {
+      since.current = at;
+      setVoiced(true);
+      setAtEnd(true);
+      if (r.data.steering) toast("Added. It reads it after the current step.");
+    }
+    return true;
   };
   const stop = async () => {
     try {
@@ -677,7 +718,7 @@ function Conversation({ runId }: { runId: number }) {
               </Button>
             </div>
           )}
-          <Composer placeholder={run && live(run.status) ? "Add something while it works…" : "Reply, or ask for more…"} onSend={send} busy={sending} autoFocus listenNow={listenNow} />
+          <Composer placeholder={run && live(run.status) ? "Add something while it works…" : "Reply, or ask for more…"} onSend={send} busy={sending} autoFocus listenNow={listenNow} onVoice={sendRecording} />
         </div>
       </div>
     </div>

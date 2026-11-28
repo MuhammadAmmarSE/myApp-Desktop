@@ -602,7 +602,7 @@ function TalkRows() {
           ]}
         />
       </Row>
-      <Row title="What you say" sub={s.voiceAutoSend ? "Goes out a moment after you stop talking (Edit stops it)" : "Waits in the box for you to send"} icon={Send}>
+      <Row title="What you say" sub={s.voiceAutoSend ? "Goes out as soon as you stop talking" : "Waits in the box for you to send"} icon={Send}>
         <Segmented
           size="sm"
           value={s.voiceAutoSend ? "auto" : "wait"}

@@ -51,10 +51,15 @@ const release = (r: Rec) => {
   void r.ctx.close().catch(() => {});
 };
 
+// what was recorded, for a screen that sends it on itself (a conversation sends it straight to the
+// assistant, which writes it down and starts at once): true when it took it, false to have it
+// written down here as usual
+export type SendRecording = (audio: { base64: string; type: string }) => Promise<boolean>;
+
 // state: "listening" while recording, "writing" while your server writes it down.
 // level: 0..1 loudness of the microphone, for a meter (read it in an animation frame, not render).
-// onFinal gets what you said.
-export function useListen(onFinal: (text: string) => void) {
+// onFinal gets what you said; opts.send takes the recording instead, when it can.
+export function useListen(onFinal: (text: string) => void, opts: { send?: SendRecording } = {}) {
   const me = useId();
   const [state, setState] = useState<"idle" | "listening" | "writing">("idle");
   const [error, setError] = useState("");
@@ -64,6 +69,10 @@ export function useListen(onFinal: (text: string) => void) {
   useEffect(() => {
     latest.current = onFinal;
   }, [onFinal]);
+  const sendTo = useRef(opts.send);
+  useEffect(() => {
+    sendTo.current = opts.send;
+  }, [opts.send]);
   useEffect(() => {
     if (state !== "idle") useHearing.setState({ who: me });
     else if (useHearing.getState().who === me) useHearing.setState({ who: null });
@@ -92,6 +101,9 @@ export function useListen(onFinal: (text: string) => void) {
     try {
       const { listenLang, urduScript } = useSettings.getState();
       const audio = await asBase64(blob);
+      // straight to the conversation, when this screen sends it on itself
+      const handOver = sendTo.current;
+      if (handOver && (await handOver({ base64: audio, type: r.type.split(";")[0] }).catch(() => false))) return;
       const said = await api<{ text: string }>("POST", "/voice/transcribe", { audio, type: r.type.split(";")[0], language: listenLang === "auto" ? undefined : listenLang, script: urduScript }, { timeoutMs: 60000 });
       const text = String(said.text || "").trim();
       if (text) latest.current(text);

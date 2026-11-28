@@ -1003,12 +1003,9 @@ async function scenario(name, fn, always = false) {
     await win.getByTestId("mic-level").waitFor();
     await win.waitForTimeout(1500);
     await win.screenshot({ path: path.join(OUT, "voice-listening.png") }).catch(() => {});
-    // the voice stops, so it does: the server writes it down, and it's about to go
-    await win.getByTestId("voice-countdown").waitFor({ timeout: 20000 });
-    const heard = await win.getByTestId("composer").inputValue();
-    if (heard !== "Read me something short") throw new Error(`the box says "${heard}"`);
-    await win.screenshot({ path: path.join(OUT, "voice-countdown.png") }).catch(() => {});
-    // it goes by itself, as something said: the answer is read aloud
+    // the voice stops, so it does: the recording goes straight to the assistant, which writes it
+    // down and starts at once; the answer is read aloud line by line as it's written
+    await win.locator("[data-user-message]").getByText("Read me something short").waitFor({ timeout: 30000 });
     await win.getByTestId("timeline").getByText("Here is something short: the kettle is on.").waitFor({ timeout: 30000 });
     if (!/spoken=1/.test(win.url())) throw new Error(`not opened as a spoken chat: ${win.url()}`);
     const said = await until("the answer read aloud", async () => {
@@ -1016,6 +1013,11 @@ async function scenario(name, fn, always = false) {
       return t && /^speak \S+ Here is something short/m.test(t) && t;
     });
     if (!/^listen audio\/webm \d+/m.test(said)) throw new Error(`the recording didn't reach the server as webm:\n${said}`);
+    // read as the server wrote it, a line at a time: speech events before a reply marked as read
+    const [evs] = await db().query("SELECT type, data FROM op_events WHERE run_id = (SELECT MAX(id) FROM op_runs) AND type IN ('speech', 'reply') ORDER BY id");
+    const types = evs.map((e) => e.type);
+    const lastReply = evs.filter((e) => e.type === "reply").pop();
+    if (!types.includes("speech") || !lastReply || !JSON.parse(typeof lastReply.data === "string" ? lastReply.data : JSON.stringify(lastReply.data)).voiced) throw new Error(`not read aloud as it was written: ${types.join(", ")}`);
     // read to its end, it listens for your reply; Esc lets it go without sending anything
     await box.locator('[data-testid="mic"][data-state="listening"]').waitFor({ timeout: 20000 });
     await win.screenshot({ path: path.join(OUT, "voice-follow-up.png") }).catch(() => {});
@@ -1063,7 +1065,9 @@ async function scenario(name, fn, always = false) {
     if ((await win.locator("[data-user-message]").count()) !== 1) throw new Error("the yes went into the chat");
   });
 
-  await scenario("talking: the talk shortcut opens the assistant listening, and stops it; Edit keeps what you said", async () => {
+  await scenario("talking: the talk shortcut opens the assistant listening, and stops it; \"Waits for me\" keeps what you said in the box", async () => {
+    await go("/settings?section=assistant");
+    await win.getByRole("tab", { name: "Waits for me" }).click();
     await go("/todos");
     const registered = await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Alt+Space"));
     if (!registered) throw new Error("Alt+Space isn't registered");
@@ -1077,14 +1081,13 @@ async function scenario(name, fn, always = false) {
     await box.locator('[data-testid="mic"][data-state="listening"]').waitFor({ timeout: 15000 });
     if (!/#\/assistant\?voice=1/.test(win.url())) throw new Error(`not on the assistant: ${win.url()}`);
     await win.waitForTimeout(1200);
-    await talk(); // again: stop, and it's written down
-    await win.getByTestId("voice-countdown").waitFor({ timeout: 20000 });
-    await win.getByTestId("voice-countdown").getByRole("button", { name: "Edit" }).click();
-    await win.getByTestId("voice-countdown").waitFor({ state: "detached" });
-    await win.waitForTimeout(3000); // longer than the countdown: nothing goes
-    if ((await win.getByTestId("composer").inputValue()) !== "Read me something short") throw new Error("what you said isn't in the box");
-    if (!/#\/assistant\?voice=1/.test(win.url())) throw new Error("it was sent after Edit");
+    await talk(); // again: stop, and it's written down into the box
+    await until("what you said in the box", async () => (await win.getByTestId("composer").inputValue()) === "Read me something short", 20000);
+    await win.waitForTimeout(2000);
+    if (!/#\/assistant\?voice=1/.test(win.url())) throw new Error("it was sent without you");
     await win.getByTestId("composer").fill("");
+    await go("/settings?section=assistant");
+    await win.getByRole("tab", { name: "Sends by itself" }).click();
   });
 
   await scenario("talking: Settings shows what it heard, and the talk shortcut", async () => {
