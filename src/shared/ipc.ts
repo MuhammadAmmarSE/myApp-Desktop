@@ -196,11 +196,18 @@ export interface Bridge {
     toMain(cmd: Command): void;
   };
   badge(count: number): void;
+  // recording a shortcut in Settings: the keys come as "shortcut-key" events until it's turned off
+  shortcuts: { record(on: boolean): void };
   on(event: "command", cb: (cmd: Command) => void): () => void;
   on(event: "window", cb: (s: WindowState) => void): () => void;
   on(event: "quick-shown", cb: () => void): () => void;
   on(event: "prefs", cb: (p: Prefs) => void): () => void;
+  on(event: "shortcut-key", cb: (k: ShortcutKey) => void): () => void;
 }
+
+// a key pressed while Settings records a shortcut (sent by the main process, which catches it
+// before the menu or the page can); "stop" = recording ended (the window lost focus, or a minute)
+export type ShortcutKey = { type: "down" | "up" | "stop"; key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean };
 
 // IPC channel names, one list for both sides
 export const CH = {
@@ -243,9 +250,11 @@ export const CH = {
   quickSave: "quick:save",
   quickToMain: "quick:to-main",
   badge: "badge",
+  shortcutsRecord: "shortcuts:record",
   // main -> renderer
   evCommand: "ev:command",
   evWindow: "ev:window",
   evQuickShown: "ev:quick-shown",
   evPrefs: "ev:prefs",
+  evShortcutKey: "ev:shortcut-key",
 } as const;

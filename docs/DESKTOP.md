@@ -238,6 +238,15 @@ screen starts listening, or stops if it is (`talk.ts` keeps the newest box that 
 with none on screen the assistant opens a new chat already listening (`/assistant?voice=1`). The
 two global shortcuts can't share keys.
 
+Recording either shortcut in Settings (`ShortcutButton`): the main process catches the keys itself
+(`recordKeys` in `main/shortcuts.ts`, the window's `before-input-event`), so the menu's own keys,
+Alt focusing the menu on Windows, and Redline's global shortcuts can't take them first; Redline's
+global shortcuts let go meanwhile (a key combo is checked by registering it and letting go) and
+come back when it stops: on a shortcut, Esc, the window losing focus, or after a minute. The
+button shows what's held ("Ctrl + …") and says why a key can't be used (no Ctrl or Alt with it).
+The page's own key events are the fallback. In the e2e test the keys are sent through the window
+(`sendInputEvent`): Playwright's keys go straight into the page and never reach `before-input-event`.
+
 ## Saying yes, no, or what to change
 
 The same spoken loop as the phone's (myApp's docs/ARCHITECTURE.md → The spoken loop). Something

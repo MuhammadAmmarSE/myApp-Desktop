@@ -47,7 +47,7 @@ import { useListen } from "@/lib/listen";
 import { MicButton, MicLevel } from "@/components/assistant/Voice";
 import { ClaudeSessions } from "@/components/assistant/ClaudeSessions";
 import { CURRENCIES, THEMES, type Theme } from "@myapp/core";
-import type { AppInfo, Prefs } from "@shared/ipc";
+import type { AppInfo, Prefs, ShortcutKey } from "@shared/ipc";
 import { Button, Card, confirmDialog, Field, Input, Kbd, Segmented, Select, Switch, Tag, TimeField, toast } from "@/components/ui";
 import { BrandMark } from "@/components/shell/BrandMark";
 import { WALLPAPERS, wallpaperUrl } from "@/components/shell/Background";
@@ -59,7 +59,7 @@ import { useList, useRecords } from "@/store/records";
 import { useUI } from "@/store/ui";
 import { api } from "@/lib/api";
 import { bridge, isMac } from "@/lib/bridge";
-import { describeAccelerator, toAccelerator } from "@/lib/accelerator";
+import { describeAccelerator, heldWords, toAccelerator, whyNotShortcut } from "@/lib/accelerator";
 import { useGpu } from "@/lib/effects";
 import { exportAll, importRecords, readBackup } from "@/lib/exporter";
 import { setQuery, useQuery } from "@/lib/router";
@@ -324,35 +324,71 @@ function Reminders() {
 }
 
 // ---------------- startup & shortcut ----------------
-// a global shortcut: click, press the keys you want (Esc keeps the old ones)
+// a global shortcut: click, press the keys you want (Esc keeps the old ones). While it records,
+// the main process sends the keys straight here (before the menu's shortcuts, Alt opening the menu,
+// or Redline's own global shortcuts can take them); the page's own key events are the fallback.
 function ShortcutButton({ value, onRecord, onRecording, testId }: { value: string; onRecord: (acc: string) => void; onRecording?: (on: boolean) => void; testId?: string }) {
   const [recording, setRecording] = useState(false);
+  const [held, setHeld] = useState("");
+  const [why, setWhy] = useState("");
   const mac = isMac();
   useEffect(() => {
     onRecording?.(recording);
+    setHeld("");
+    setWhy("");
     if (!recording) return;
-    const onKey = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.key === "Escape") return setRecording(false);
-      const acc = toAccelerator(e, mac);
-      if (!acc) return;
+    const handle = (k: ShortcutKey) => {
+      if (k.type === "stop") return setRecording(false);
+      if (k.type === "up") return setHeld(heldWords(k, mac));
+      if (k.key === "Escape") return setRecording(false);
+      const acc = toAccelerator(k, mac);
+      if (!acc) {
+        setHeld(heldWords(k, mac));
+        const reason = whyNotShortcut(k, mac);
+        if (reason) setWhy(reason);
+        return;
+      }
       setRecording(false);
       onRecord(acc);
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    const fromPage = (type: "down" | "up") => (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      handle({ type, key: e.key, code: e.code, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey });
+    };
+    const down = fromPage("down");
+    const up = fromPage("up");
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    const off = bridge.on("shortcut-key", handle);
+    bridge.shortcuts.record(true);
+    return () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+      off();
+      bridge.shortcuts.record(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording]);
   return (
-    <button
-      type="button"
-      onClick={() => setRecording(true)}
-      className={clsx("h-8 min-w-[150px] rounded-[9px] px-3 text-[13px] font-medium transition-shadow", recording ? "animate-pulse bg-accent-soft text-accent-text shadow-[inset_0_0_0_1px_var(--c-accent)]" : "bg-surface2 hairline hover:bg-hover")}
-      data-testid={testId}
-    >
-      {recording ? "Press keys…" : value ? describeAccelerator(value, mac) : "Off — click to set"}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => setRecording(!recording)}
+        aria-label={recording ? "Recording the shortcut: press the keys together, Esc to cancel" : value ? `Shortcut ${describeAccelerator(value, mac)}: click to change` : "No shortcut: click to set one"}
+        className={clsx("h-8 min-w-[150px] rounded-[9px] px-3 text-[13px] font-medium tnum transition-shadow", recording ? "bg-accent-soft text-accent-text shadow-[inset_0_0_0_1px_var(--c-accent)]" : "bg-surface2 hairline hover:bg-hover")}
+        data-testid={testId}
+        data-recording={recording ? "1" : undefined}
+      >
+        {recording ? held || "Press the keys together…" : value ? describeAccelerator(value, mac) : "Off — click to set"}
+      </button>
+      {recording && (
+        <span className={clsx("max-w-[260px] text-right text-[11.5px]", why ? "text-warn" : "text-text3")} role="status" data-testid={testId ? `${testId}-hint` : undefined}>
+          {why || `Hold ${mac ? "⌘, ⌃ or ⌥" : "Ctrl or Alt"} and press a key · Esc to cancel`}
+        </span>
+      )}
+    </div>
   );
 }
 

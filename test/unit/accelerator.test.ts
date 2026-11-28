@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAccelerator, toAccelerator } from "@/lib/accelerator";
+import { describeAccelerator, heldWords, toAccelerator, whyNotShortcut } from "@/lib/accelerator";
 
 const key = (over: Partial<{ key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }>) => ({ key: "", code: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...over });
 
@@ -31,5 +31,22 @@ describe("describeAccelerator", () => {
     expect(describeAccelerator("CommandOrControl+Shift+Space", false)).toBe("Ctrl + Shift + Space");
     expect(describeAccelerator("CommandOrControl+Shift+Space", true)).toBe("⌘ ⇧ Space");
     expect(describeAccelerator("Alt+Super+K", false)).toBe("Alt + Win + K");
+  });
+});
+
+describe("while recording", () => {
+  it("shows what's held so far", () => {
+    expect(heldWords(key({ key: "Control", ctrlKey: true }), false)).toBe("Ctrl + …");
+    expect(heldWords(key({ key: "Shift", ctrlKey: true, shiftKey: true }), false)).toBe("Ctrl + Shift + …");
+    expect(heldWords(key({ key: "Meta", metaKey: true, altKey: true }), true)).toBe("⌘ ⌥ …");
+    expect(heldWords(key({ key: "a" }), false)).toBe("");
+  });
+  it("says why a key can't be the shortcut, and nothing while only modifiers are down", () => {
+    expect(whyNotShortcut(key({ key: "t", code: "KeyT" }), false)).toMatch(/Hold Ctrl or Alt with it/);
+    expect(whyNotShortcut(key({ key: "T", code: "KeyT", shiftKey: true }), false)).toMatch(/Hold Ctrl or Alt/);
+    expect(whyNotShortcut(key({ key: "t", code: "KeyT" }), true)).toMatch(/⌘, ⌃ or ⌥/);
+    expect(whyNotShortcut(key({ key: "Control", ctrlKey: true }), false)).toBe("");
+    expect(whyNotShortcut(key({ key: "k", code: "KeyK", ctrlKey: true }), false)).toBe("");
+    expect(whyNotShortcut(key({ key: "Dead", code: "Quote", ctrlKey: true }), false)).toMatch(/can't be part of a shortcut/);
   });
 });

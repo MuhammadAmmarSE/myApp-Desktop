@@ -11,7 +11,7 @@ import { loadRecords, markClean, putRecords, setMeta, wipeRecords } from "./reco
 import { getPrefs, setPrefs } from "./prefs";
 import { schedule, show as showNotification, testNotification } from "./reminders";
 import { applyStartAtLogin } from "./startup";
-import { registerQuickShortcut, registerTalkShortcut } from "./shortcuts";
+import { recordKeys, registerQuickShortcut, registerTalkShortcut } from "./shortcuts";
 import { buildMenu } from "./menu";
 import { broadcast, command, hideQuick, mainWindow, openQuick, setQuitting, winState } from "./windows";
 import { buildTrayMenu } from "./tray";
@@ -166,6 +166,12 @@ export function registerIpc() {
   ipcMain.handle(CH.dbClean, (_e, list: { id: string; updated_at: number }[]) => markClean(list));
   ipcMain.handle(CH.dbMeta, (_e, key: string, value: string) => setMeta(key, value));
   ipcMain.handle(CH.dbWipe, () => wipeRecords());
+
+  // Settings recording a shortcut: only the main window, the one asking
+  ipcMain.on(CH.shortcutsRecord, (e, on: boolean) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    recordKeys(win && win === mainWindow ? win : null, on === true);
+  });
 
   ipcMain.handle(CH.prefsGet, () => getPrefs());
   ipcMain.handle(CH.prefsSet, (_e, patch: Partial<Prefs>) => {

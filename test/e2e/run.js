@@ -1151,6 +1151,51 @@ async function scenario(name, fn, always = false) {
     await win.screenshot({ path: path.join(OUT, "voice-settings-talk.png") }).catch(() => {});
   });
 
+  await scenario("talking: a new talk shortcut recorded by pressing keys (a plain key explained, Esc keeps the old one, Ctrl+K taken from search)", async () => {
+    // keys the way the keyboard sends them (through the window, where the menu and Redline's own
+    // shortcuts would see them first), not straight into the page
+    const key = (type, keyCode, modifiers = []) =>
+      app.evaluate(({ BrowserWindow }, [t, k, m]) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes("quick")).webContents.sendInputEvent({ type: t, keyCode: k, modifiers: m }), [type, keyCode, modifiers]);
+    const press = async (keyCode, modifiers = []) => {
+      await key("keyDown", keyCode, modifiers);
+      await key("keyUp", keyCode, modifiers);
+    };
+    await go("/settings?section=assistant");
+    const btn = win.getByTestId("talk-shortcut");
+    const hint = win.getByTestId("talk-shortcut-hint");
+    await btn.getByText("Alt + Space").waitFor();
+    // Ctrl+K opens search when nothing is recording
+    await press("K", ["control"]);
+    await win.locator('[role="dialog"][aria-label="Search everything"]').waitFor();
+    await win.keyboard.press("Escape");
+    await win.locator('[role="dialog"][aria-label="Search everything"]').waitFor({ state: "detached" });
+    // Esc keeps what it was
+    await btn.click();
+    await win.locator('[data-testid="talk-shortcut"][data-recording="1"]').waitFor();
+    await press("Escape");
+    await btn.getByText("Alt + Space").waitFor();
+    // a key on its own can't be a shortcut, and it says so; holding Ctrl shows as it's held
+    await btn.click();
+    await press("T");
+    await hint.getByText(/Hold Ctrl or Alt with it/).waitFor();
+    await key("keyDown", "Control", ["control"]);
+    await btn.getByText("Ctrl + …").waitFor();
+    // Ctrl+K: recorded, and search stays shut
+    await press("K", ["control"]);
+    await key("keyUp", "Control");
+    await btn.getByText("Ctrl + K").waitFor();
+    await win.getByText("Talk: Ctrl + K").waitFor();
+    if (await win.locator('[role="dialog"][aria-label="Search everything"]').count()) throw new Error("search opened while recording");
+    const saved = await win.evaluate(() => window.redline.prefs.get());
+    if (saved.talkShortcut !== "CommandOrControl+K") throw new Error(`saved ${saved.talkShortcut}`);
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "talk-shortcut.png") });
+    // back to Alt+Space, pressed in the page (the page's own keys work too)
+    await btn.click();
+    await win.keyboard.press("Alt+Space");
+    await btn.getByText("Alt + Space").waitFor();
+    await until("Alt+Space saved", async () => (await win.evaluate(() => window.redline.prefs.get())).talkShortcut === "Alt+Space");
+  });
+
   await scenario("settings: theme, wallpaper, effects and text size apply at once", async () => {
     await go("/settings?section=appearance");
     const accent = () => win.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--c-accent").trim());

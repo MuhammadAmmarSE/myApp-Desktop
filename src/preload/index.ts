@@ -11,7 +11,7 @@ const listen = (channel: string, cb: (...a: any[]) => void) => {
   };
 };
 
-const EVENTS: Record<string, string> = { command: CH.evCommand, window: CH.evWindow, "quick-shown": CH.evQuickShown, prefs: CH.evPrefs };
+const EVENTS: Record<string, string> = { command: CH.evCommand, window: CH.evWindow, "quick-shown": CH.evQuickShown, prefs: CH.evPrefs, "shortcut-key": CH.evShortcutKey };
 
 const bridge: Bridge = {
   app: {
@@ -63,6 +63,7 @@ const bridge: Bridge = {
     toMain: (cmd) => ipcRenderer.send(CH.quickToMain, cmd),
   },
   badge: (n) => ipcRenderer.send(CH.badge, n),
+  shortcuts: { record: (on) => ipcRenderer.send(CH.shortcutsRecord, !!on) },
   on: ((event: string, cb: (p: any) => void) => listen(EVENTS[event], cb)) as Bridge["on"],
 };
 

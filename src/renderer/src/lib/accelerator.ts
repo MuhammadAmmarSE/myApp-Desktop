@@ -36,3 +36,25 @@ export function describeAccelerator(acc: string, mac: boolean): string {
     .map((p) => map[p] || p)
     .join(mac ? " " : " + ");
 }
+
+// what's held down so far, for the button while recording: "Ctrl + Shift + …" ("" with nothing)
+export function heldWords(e: KeyLike, mac: boolean): string {
+  const mods: string[] = [];
+  if (mac ? e.metaKey : e.ctrlKey) mods.push("CommandOrControl");
+  if (mac && e.ctrlKey) mods.push("Control");
+  if (!mac && e.metaKey) mods.push("Super");
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+  if (!mods.length) return "";
+  return `${describeAccelerator(mods.join("+"), mac)}${mac ? " " : " + "}…`;
+}
+
+// why a key pressed while recording can't be the shortcut, in words ("" when it's only a modifier,
+// so there's nothing to say yet)
+export function whyNotShortcut(e: KeyLike, mac: boolean): string {
+  if (["Control", "Meta", "Alt", "Shift", "OS"].includes(e.key)) return "";
+  if (toAccelerator(e, mac)) return "";
+  const mods = mac ? e.metaKey || e.ctrlKey || e.altKey : e.ctrlKey || e.altKey || e.metaKey;
+  if (!mods) return `Hold ${mac ? "⌘, ⌃ or ⌥" : "Ctrl or Alt"} with it, e.g. ${mac ? "⌘ ⇧ T" : "Ctrl + Shift + T"} (F1–F24 work on their own)`;
+  return "That key can't be part of a shortcut. Try a letter, a number or F1–F24.";
+}
