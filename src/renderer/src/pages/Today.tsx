@@ -39,6 +39,7 @@ import { carHeadsUp } from "@/lib/car";
 import { warrantyHeadsUp } from "@/lib/things";
 import { workHeadsUp } from "@/lib/work";
 import { useFunds } from "@/lib/funds";
+import { useOwed } from "@/lib/owed";
 import { isInbox } from "@/lib/inbox";
 import { useNow } from "@/lib/clock";
 import { navigate } from "@/lib/router";
@@ -93,6 +94,7 @@ export default function Today() {
   }, [money_, today, currency]);
 
   const funds = useFunds();
+  const owed = useOwed();
   const heads = useMemo(() => {
     const out: Heads[] = [];
     const late = todos.filter((t) => !t.data.done && t.data.due && t.data.due < today).length;
@@ -113,12 +115,14 @@ export default function Today() {
       const amount = money(Math.abs(f.summary.left), f.fund.data.currency || currency);
       out.push({ key: `fund-${f.fund.id}`, icon: HandCoins, text: f.summary.left > 0 ? `${amount} of ${f.fund.data.from}'s money left with you` : `You spent ${amount} over ${f.fund.data.from}'s money`, tone: "accent", to: `/funds/${f.fund.id}` });
     }
+    // money you lent, past the day they said they'd pay it back
+    for (const o of owed.open.filter((r) => r.overdue).slice(0, 2)) out.push({ key: `owed-${o.rec.id}`, icon: HandCoins, text: `${o.rec.data.who} hasn't paid back ${money(o.left, o.rec.data.currency || currency)} yet`, tone: "warn", to: `/owed/${o.rec.id}` });
     if (pace.change != null && pace.now > 0 && Math.abs(pace.change) >= 0.15) {
       const pct = Math.round(Math.abs(pace.change) * 100);
       out.push({ key: "pace", icon: pace.change > 0 ? TrendingUp : TrendingDown, text: `Spending ${pace.change > 0 ? "up" : "down"} ${pct}% on last month so far`, tone: pace.change > 0 ? "warn" : "success", to: "/money" });
     }
     return out;
-  }, [todos, cars, carLogs, things, domains, servers, words, notes, coming, pace, funds, currency, today]);
+  }, [todos, cars, carLogs, things, domains, servers, words, notes, coming, pace, funds, owed, currency, today]);
 
   const brief = briefLine({ next: next ? { title: next.item.title, when: countdown(next.inMs) } : null, open: progress.open, done: progress.done, heads: heads.length });
   const part = partOfDay(nowMs);

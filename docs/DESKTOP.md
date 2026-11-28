@@ -164,6 +164,22 @@ hisaab's page (only its items). `lib/purchase.ts` has `buyTogether`, `unbuyOne`,
 `setPurchaseFund`, each undoable; unticking one of several in Lists asks "Only X" or "None of the
 N". `test/unit/purchase.test.ts` checks every figure (month, hisaab, pot) after each step.
 
+## Your money with others (`pages/Owed.tsx`, `lib/owed.ts`, `components/forms/OwedEditors.tsx`, core's `owed.ts`)
+
+An `owed` record is your own money someone else has: `type` keeping (kept for you) or loan (lent),
+`who`, `amount`, `date`, `account`, `due` (a loan's day), and `moves` (back / more / forgave, each
+with its date). Core's `owedSummary` works out what's left; `owedWithMove` caps a step back at what
+they have and settles it when nothing is left. It's never money: Money's totals don't change, and
+the hero says how much of your money is with others (`owedTotals`). Letting a loan's rest go
+(`forgave`) is the one step that touches Money: an expense (category Gifts) with the step's
+`money_id`, removed again when the step is taken back or the record deleted. `lib/owed.ts` has
+`createOwed`, `owedStep`, `takeStepBack`, `removeOwed` (each returns its undo) and `useOwed`. The
+editors are `edit("owed", rec?, { type })` and `edit("owed_step", null, { id, step })`. Capture and
+Quick capture send the open ones (`owed: [{ id, who, type, left }]`); an `owed_move` action is a
+step on one (Quick capture sends it to the main window as an `owed_move` draft). The assistant's
+`step` change (`{ op: "step", id, step, amount }`) is applied with `owedStep`.
+`test/unit/owed.test.ts` checks every figure after each step.
+
 ## Pots (`pages/Pot.tsx`, `lib/pots.ts`, `components/forms/PotEditors.tsx`, core's `pots.ts`)
 
 Envelope budgeting, the same as the phone's (myApp's docs/ARCHITECTURE.md → Pots): a `pot` record

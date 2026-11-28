@@ -37,6 +37,7 @@ import {
   User,
   Wallet,
   X,
+  Banknote,
   type LucideIcon,
 } from "lucide-react";
 import { describeChange, describeStep, type Kind, type Rec, type Step } from "@myapp/core";
@@ -73,6 +74,7 @@ const KIND_ICON: Record<Kind, LucideIcon> = {
   memory: Brain,
   fund: HandCoins,
   pot: PiggyBank,
+  owed: Banknote,
 };
 const READ_ICON: Record<string, LucideIcon> = { find_records: Search, get_records: Search, money_totals: Calculator, my_overview: LayoutList, app_guide: BookOpen };
 

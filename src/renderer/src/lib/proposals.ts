@@ -7,6 +7,7 @@ import { create } from "zustand";
 import { cleanChange, isoDate, newRecordData, nextPotColor, updatedRecordData, type Change, type ProposalItem, type Rec } from "@myapp/core";
 import { movePot } from "@/lib/pots";
 import { buyTogether } from "@/lib/purchase";
+import { owedStep } from "@/lib/owed";
 import { api } from "@/lib/api";
 import { useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
@@ -87,6 +88,12 @@ function apply(change: Change): { ok: true; id: string; undo: () => void } | { o
     const r = buyTogether(ch.ids, { amount: ch.amount, date: ch.date, account: ch.account, fundId: ch.fund, potId: ch.pot_id, note: ch.note });
     if (!r) return { ok: false, why: "Those items aren't on your list any more, or they have a price already." };
     return { ok: true, id: r.money.id, undo: r.undo };
+  }
+  // a step on your money with someone: took some back, paid back, gave or lent more
+  if (ch.op === "step") {
+    const r = s.byId[ch.id];
+    if (!r || r.deleted) return { ok: false, why: "That isn't here any more." };
+    return { ok: true, id: ch.id, undo: owedStep(ch.id, ch.step, ch.amount, { date: ch.date, note: ch.note }) };
   }
   const was = s.byId[ch.id] as Rec;
   if (ch.op === "update") {

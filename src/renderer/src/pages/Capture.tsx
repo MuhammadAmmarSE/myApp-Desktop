@@ -12,7 +12,8 @@ import { Orb, type OrbState } from "@/components/orb/Orb";
 import { useList, useRecords } from "@/store/records";
 import { useSettings } from "@/store/settings";
 import { edit, useUI, type EditKind } from "@/store/ui";
-import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, potNameOf, remember, sortOut, whoseOf, type OpenFund, type OpenPot } from "@/lib/capture";
+import { ACTION_AREA, ACTION_ICON, describe, EXAMPLES, potNameOf, remember, sortOut, whoseOf, type OpenFund, type OpenOwed, type OpenPot } from "@/lib/capture";
+import { owedStep, useOwed } from "@/lib/owed";
 import { autoSplit, movePot, potsNow, usePots } from "@/lib/pots";
 import { addMove, useFunds } from "@/lib/funds";
 import { navigate, useQuery } from "@/lib/router";
@@ -55,6 +56,9 @@ export default function Capture() {
   // your pots: the AI may put money into them or take spending out of them
   const potRows = usePots().rows;
   const pots: OpenPot[] = useMemo(() => potRows.map((r) => ({ id: r.pot.id, name: r.pot.data.name, type: r.pot.data.type, balance: r.summary.balance, rule: !!r.pot.data.rule })), [potRows]);
+  // your money with others: "took 20k from Abu" lands on one of them
+  const owedRows = useOwed().open;
+  const owed: OpenOwed[] = useMemo(() => owedRows.slice(0, 20).map((r) => ({ id: r.rec.id, who: r.rec.data.who, type: r.rec.data.type, left: r.left })), [owedRows]);
   const [text, setText] = useState(query.get("text") || "");
   // sent from notes (ones saved while the server was offline): once saved, those notes are done
   const [fromNotes] = useState(() => (query.get("notes") || "").split(",").filter(Boolean));
@@ -105,8 +109,8 @@ export default function Capture() {
   const cards = useMemo(() => {
     const whose = whoseOf(actions, keep, funds);
     const potName = potNameOf(actions, keep, pots);
-    return actions.map((a) => describe(a, currency, whose, potName, (amount) => autoSplit(amount)));
-  }, [actions, keep, funds, pots, currency]);
+    return actions.map((a) => describe(a, currency, whose, potName, (amount) => autoSplit(amount), owed));
+  }, [actions, keep, funds, pots, owed, currency]);
   const reviewing = phase === "review" || phase === "saved";
 
   // what came back: shown, and read aloud when you said it
@@ -132,7 +136,7 @@ export default function Capture() {
     setError(null);
     useRecords.getState().setMeta(HISTORY_KEY, JSON.stringify(remember(history.map((h) => h.text), input).map((t) => ({ text: t, at: t === input ? Date.now() : history.find((h) => h.text === t)?.at || Date.now() }))));
     try {
-      shown(await sortOut(input, { currency, people, funds, pots, spoken: spoken.current }));
+      shown(await sortOut(input, { currency, people, funds, pots, owed, spoken: spoken.current }));
     } catch (e) {
       const err = e as ApiError;
       setError({ message: err.message || "Couldn't sort that out.", code: err.code });
@@ -148,7 +152,7 @@ export default function Capture() {
     setRevising(said);
     try {
       const kept = actions.filter((_, i) => keep[i] && !moved[i]);
-      shown(await sortOut(input, { currency, people, funds, pots, spoken: true }, { actions: kept, correction: said }));
+      shown(await sortOut(input, { currency, people, funds, pots, owed, spoken: true }, { actions: kept, correction: said }));
     } catch (e) {
       toast.error((e as ApiError).message || "Couldn't change it.");
     } finally {
@@ -218,6 +222,7 @@ export default function Capture() {
       create: (kind, data) => s.create(kind, data as never).id,
       addMore: (id, m) => void addMove(id, "more", m.amount, m.note, m.date),
       addPotMove: (id, m) => void movePot(m.dir === "out" ? id : null, m.dir === "out" ? m.other : id, m.amount, m.note, m.date),
+      addOwedMove: (id, m) => void owedStep(id, m.type, m.amount, { date: m.date, note: m.note }),
       autoSplit: (amount) => autoSplit(amount),
       potColor: nextPotColor(potsNow()),
     });

@@ -40,6 +40,7 @@ export const GROUP_WORD: Record<Group, string> = {
   media: "Games, books & shows",
   wish: "Wishlist",
   fund: "Money given to you to spend",
+  owed: "Your money with others",
   pot: "Pots",
   memory: "What the assistant remembers",
 };
@@ -69,6 +70,7 @@ export const GROUP_ORDER: Group[] = [
   "wish",
   "pot",
   "fund",
+  "owed",
   "memory",
 ];
 
@@ -105,6 +107,8 @@ export function commands(mod = "Ctrl"): Entry[] {
     act("expense", "Add an expense", "spent money paid create", { edit: "money" }, "Action", `${mod} Shift E`),
     act("income", "Add income", "earned salary money received", { edit: "money", preset: { type: "income" } }),
     act("fund", "Someone gave me money to spend", "hisaab mother gave money groceries spend for them account owe", { to: "/money?add=fund" }),
+    act("owed", "Someone has my money", "amanat keeping kept with someone has my money holding for me", { edit: "owed", preset: { type: "keeping" } }),
+    act("lend", "I lent money", "udhaar loan lent borrowed owes me pay back qarz", { edit: "owed", preset: { type: "loan" } }),
     act("pot", "New pot", "pots envelope budget jobs split income personal loan savings bills goal", { to: "/money?add=pot" }),
     act("event", "Add an event", "calendar meeting appointment create", { edit: "event" }),
     act("reminder", "Set a reminder", "remind alert ring create", { edit: "reminder" }),
@@ -236,6 +240,17 @@ export function recordEntries(lists: { [K in Kind]: Rec<K>[] }, ctx: { currency:
       keywords: `hisaab ${f.data.from} ${f.data.amount}`,
       detail: `Gave you ${money(f.data.amount, f.data.currency || ctx.currency)} · ${shortDate(f.data.date, today)}${f.data.closed ? " · settled" : ""}`,
       open: { to: `/funds/${f.id}` },
+    });
+  for (const o of lists.owed || [])
+    out.push({
+      id: o.id,
+      kind: "owed",
+      group: "owed",
+      title: o.data.type === "loan" ? `Lent to ${o.data.who}` : `With ${o.data.who}`,
+      body: o.data.notes,
+      keywords: `${o.data.type === "loan" ? "udhaar loan lent owes" : "amanat keeping has my money"} ${o.data.who} ${o.data.amount}`,
+      detail: `${money(o.data.amount, o.data.currency || ctx.currency)} · ${shortDate(o.data.date, today)}${o.data.closed ? " · settled" : ""}`,
+      open: { to: `/owed/${o.id}` },
     });
   for (const m of lists.memory || []) out.push({ id: m.id, kind: "memory", group: "memory", title: m.data.text, keywords: m.data.topic, detail: m.data.topic ? `Remembered · ${m.data.topic}` : "Remembered", open: { to: "/settings?section=memory" } });
   for (const t of lists.thing)

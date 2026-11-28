@@ -595,6 +595,55 @@ async function scenario(name, fn, always = false) {
     }
   });
 
+  await scenario("money with others: Abu keeps some of mine, I take some back (and take that back), lend Ali by Capture, and let the rest go", async () => {
+    await go("/money");
+    const netBefore = await win.getByTestId("net").innerText();
+    await win.getByTestId("add-keeping").click();
+    await dialog().getByLabel("How much").fill("150000");
+    await field("Who has it").fill("Abu");
+    await saveDialog();
+    const abu = await until("Abu's on the server", async () => (await live("owed")).find((r) => r.data.who === "Abu" && r.data.type === "keeping" && r.data.amount === 150000));
+    await win.getByTestId("owed").waitFor();
+    await win.getByTestId("owed-left").getByText("Rs 150,000").waitFor();
+    // took 20,000 of it back, then that step taken back
+    await win.getByTestId("owed-back").click();
+    await dialog().getByLabel("Amount").fill("20000");
+    await saveDialog();
+    await until("20,000 back on the server", async () => (await live("owed")).find((r) => r.id === abu.id && (r.data.moves || []).some((m) => m.type === "back" && m.amount === 20000)));
+    await win.getByTestId("owed-left").getByText("Rs 130,000").waitFor();
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "owed-page.png") });
+    const step = win.locator('[data-owed-step="back"]').first();
+    await step.hover();
+    await step.getByRole("button", { name: "Take back: Took some back" }).click();
+    await until("the step taken back", async () => (await live("owed")).find((r) => r.id === abu.id && !(r.data.moves || []).length));
+    await win.getByTestId("owed-left").getByText("Rs 150,000").waitFor();
+    // Money: still yours, so what's left over is the same, with how much of it Abu has
+    await go("/money");
+    await win.getByTestId("net-with-others").getByText("Rs 150,000 of your money is with Abu").waitFor();
+    if ((await win.getByTestId("net").innerText()) !== netBefore) throw new Error("money with someone changed what's left over");
+    await win.getByTestId("with-others").locator(`[data-owed="${abu.id}"]`).waitFor();
+    if (process.env.E2E_SHOTS) {
+      await win.getByTestId("with-others").scrollIntoViewIfNeeded();
+      await win.screenshot({ path: path.join(OUT, "owed-money.png") });
+    }
+    // by words: a loan to Ali, and 10,000 back from Abu
+    await go("/capture");
+    await win.getByLabel("What to capture").fill("lent Ali 20000 and took 10000 from Abu");
+    await win.keyboard.press("Control+Enter");
+    await win.getByTestId("review").waitFor({ timeout: 15000 });
+    await win.getByTestId("review").getByText("Took Rs 10,000 from what Abu has").first().waitFor();
+    await win.getByTestId("save-all").click();
+    const ali = await until("the loan to Ali", async () => (await live("owed")).find((r) => r.data.who === "Ali" && r.data.type === "loan" && r.data.amount === 20000));
+    await until("10,000 back from Abu", async () => (await live("owed")).find((r) => r.id === abu.id && (r.data.moves || []).some((m) => m.type === "back" && m.amount === 10000)));
+    // Ali won't pay it back: the rest let go becomes spending
+    await go(`/owed/${ali.id}`);
+    await win.getByTestId("owed-let-go").click();
+    await win.getByRole("button", { name: "Let it go" }).click();
+    await until("the loan settled", async () => (await live("owed")).find((r) => r.id === ali.id && r.data.closed && (r.data.moves || []).some((m) => m.type === "forgave" && m.amount === 20000 && m.money_id)));
+    await until("a gift of 20,000 in Money", async () => (await live("money")).find((r) => r.data.type === "expense" && r.data.amount === 20000 && r.data.category === "Gifts"));
+    await win.getByTestId("owed-left").getByText("Settled").waitFor();
+  });
+
   await scenario("settings: what the assistant remembers, added and forgotten", async () => {
     await go("/settings?section=memory");
     await win.getByLabel("Something to remember").fill("I take chai without sugar");

@@ -834,4 +834,97 @@ ok("the assistant proposes a purchase of several list items for one price", () =
   const w = c.describeChange(r.change, { currency: "PKR", today: "2026-11-28", fundName: "Mother's money" });
   assert.deepStrictEqual(w, { verb: "Bought together", title: "Tomatoes and Onions", detail: "2 items for Rs 1,000 · from Mother's money · Yesterday" });
 });
+ok("owed: money kept with someone, taken back bit by bit", () => {
+  const rec = { id: "o1", data: { type: "keeping", who: "Abu", amount: 150000, currency: "PKR", date: "2026-11-01", account: "cash", moves: [], closed: false } };
+  let s = c.owedSummary(rec);
+  assert.deepStrictEqual([s.given, s.back, s.left, s.overdue], [150000, 0, 150000, false]);
+  assert.strictEqual(c.owedLine(rec, "PKR"), "Abu has Rs 150,000 of yours");
+  let d = c.owedWithMove(rec, { type: "back", amount: 20000, date: "2026-11-10" });
+  assert.strictEqual(c.owedSummary({ data: d }).left, 130000);
+  assert.strictEqual(d.closed, false);
+  d = c.owedWithMove({ data: d }, { type: "more", amount: 5000, date: "2026-11-12" });
+  assert.strictEqual(c.owedSummary({ data: d }).given, 155000);
+  // taking back more than they have is capped at what's left, and closes it
+  d = c.owedWithMove({ data: d }, { type: "back", amount: 999999, date: "2026-11-20" });
+  assert.deepStrictEqual([c.owedSummary({ data: d }).left, d.moves[2].amount, d.closed, d.closed_on], [0, 135000, true, "2026-11-20"]);
+  assert.strictEqual(c.owedLine({ data: d }, "PKR"), "All of it back from Abu");
+  // taking that step back opens it again
+  const u = c.owedWithoutMove({ data: d }, 2);
+  assert.deepStrictEqual([c.owedSummary({ data: u }).left, u.closed, u.closed_on], [135000, false, null]);
+  // giving more to a settled one opens it again
+  const again = c.owedWithMove({ data: d }, { type: "more", amount: 1000, date: "2026-11-25" });
+  assert.deepStrictEqual([again.closed, again.closed_on], [false, null]);
+  assert.strictEqual(c.owedMoveWord("keeping", "back"), "Took some back");
+  assert.strictEqual(c.owedMoveWord("keeping", "more"), "Gave more to keep");
+});
+ok("owed: a loan, paid back, overdue, the rest let go as spending", () => {
+  const rec = { id: "o2", data: { type: "loan", who: "Ali", amount: 50000, currency: "PKR", date: "2026-10-01", due: "2026-11-15", account: "bank", moves: [{ type: "back", amount: 20000, date: "2026-11-01" }], closed: false } };
+  let s = c.owedSummary(rec, "2026-11-28");
+  assert.deepStrictEqual([s.left, s.part, s.overdue], [30000, 0.4, true]);
+  assert.strictEqual(c.owedSummary(rec, "2026-11-10").overdue, false);
+  assert.strictEqual(c.owedLine(rec, "PKR", "2026-11-28"), "Ali owes you Rs 30,000 of Rs 50,000 · was due 15 Nov");
+  const e = c.forgivenExpense(rec, 30000, "2026-11-28", "PKR");
+  assert.deepStrictEqual([e.type, e.amount, e.category, e.account, e.currency], ["expense", 30000, "Gifts", "bank", "PKR"]);
+  const d = c.owedWithMove(rec, { type: "forgave", amount: 30000, date: "2026-11-28", money_id: "m9" });
+  s = c.owedSummary({ data: d }, "2026-11-28");
+  assert.deepStrictEqual([s.left, s.forgiven, s.overdue, d.closed], [0, 30000, false, true]);
+  assert.strictEqual(c.owedLine({ data: d }, "PKR"), "Ali paid it all back");
+  const text = c.owedText(rec, "PKR", "2026-11-28");
+  assert.ok(/^Udhaar · Ali/.test(text) && /lent Rs 50,000/.test(text) && /paid back Rs 20,000/.test(text) && /Left: Rs 30,000/.test(text) && /To pay back by 15 Nov/.test(text), text);
+  assert.ok(/^Amanat · Abu/.test(c.owedText({ data: { type: "keeping", who: "Abu", amount: 100, date: "2026-11-01" } }, "PKR")));
+});
+ok("owed: totals of your money with others", () => {
+  const recs = [
+    { id: "a", data: { type: "keeping", who: "Abu", amount: 150000, date: "2026-11-01", moves: [{ type: "back", amount: 10000, date: "2026-11-05" }] } },
+    { id: "b", data: { type: "loan", who: "Ali", amount: 20000, date: "2026-11-01" } },
+    { id: "c", data: { type: "loan", who: "Sara", amount: 5000, date: "2026-11-01", closed: true } },
+    { id: "d", data: { type: "loan", who: "Omar", amount: 100, currency: "USD", date: "2026-11-01" } },
+    { id: "e", deleted: 1, data: { type: "keeping", who: "Bilal", amount: 9000, date: "2026-11-01" } },
+  ];
+  const t = c.owedTotals(recs, "PKR");
+  assert.deepStrictEqual([t.keeping, t.lent, t.total, t.open.map((x) => x.rec.id)], [140000, 20000, 160000, ["a", "b"]]);
+});
+ok("owed: capture files it, and a step on one you have", () => {
+  const ctx = { today: "2026-11-28", owed: ["o1"] };
+  const acts = c.cleanActions(
+    [
+      { type: "owed", who: "Abu", amount: "150,000" },
+      { type: "owed", owed_type: "loan", who: "Ali", amount: 20000, due: "2026-12-05", account: "bank" },
+      { type: "owed", owed_type: "keeping", who: "Sara", amount: 100, due: "2026-12-05" },
+      { type: "owed", who: "", amount: 5 },
+      { type: "owed_move", owed: "o1", move: "back", amount: "20k" },
+      { type: "owed_move", owed: "o1", amount: 20000 },
+      { type: "owed_move", owed: "nope", move: "back", amount: 100 },
+    ],
+    ctx,
+  );
+  assert.deepStrictEqual(acts[0], { type: "owed", owed_type: "keeping", who: "Abu", amount: 150000, date: "2026-11-28", note: undefined });
+  assert.deepStrictEqual([acts[1].owed_type, acts[1].due, acts[1].account], ["loan", "2026-12-05", "bank"]);
+  assert.strictEqual(acts[2].due, undefined, "only a loan has a day to pay back by");
+  assert.deepStrictEqual(acts.slice(3).map((a) => [a.type, a.move]), [["owed_move", "back"]], "an amount it can't read, or a record that isn't open, is dropped");
+  const recs = c.actionToRecords(acts[1], { currency: "PKR", people: [{ id: "p1", name: "Ali", relation: "friend" }] });
+  assert.deepStrictEqual(recs[0].data, { type: "loan", who: "Ali", person_id: "p1", amount: 20000, currency: "PKR", date: "2026-11-28", account: "bank", due: "2026-12-05", moves: [], closed: false });
+  const made = [];
+  const moved = [];
+  c.saveActions(acts, { currency: "PKR", people: [], create: (kind, data) => (made.push([kind, data.who]), "id" + made.length), addMore: () => {}, addOwedMove: (id, mv) => moved.push([id, mv]) });
+  assert.deepStrictEqual(made, [["owed", "Abu"], ["owed", "Ali"], ["owed", "Sara"]]);
+  assert.deepStrictEqual(moved, [["o1", { type: "back", amount: 20000, date: "2026-11-28" }]]);
+  assert.strictEqual(c.ACTION_AREA.owed, "With others");
+});
+ok("owed: the assistant can propose it, and fills in what it leaves out", () => {
+  const ctx = { today: "2026-11-28", currency: "PKR", get: () => null };
+  const r = c.cleanChange({ op: "create", kind: "owed", data: { who: "Abu", amount: "150,000" } }, ctx);
+  assert.ok(r.change, JSON.stringify(r));
+  assert.deepStrictEqual([r.change.data.who, r.change.data.amount], ["Abu", 150000]);
+  assert.match(c.cleanChange({ op: "create", kind: "owed", data: { amount: 5 } }, ctx).error || "", /who/);
+  const abu = { kind: "owed", data: { type: "keeping", who: "Abu", amount: 150000, currency: "PKR", date: "2026-11-01", moves: [] } };
+  const g = { today: "2026-11-28", get: (id) => (id === "o1" ? abu : null) };
+  const st = c.cleanChange({ op: "step", id: "o1", step: "back", amount: "20,000" }, g);
+  assert.deepStrictEqual(st.change, { op: "step", kind: "owed", id: "o1", step: "back", amount: 20000, date: "2026-11-28", title: "With Abu" });
+  assert.match(c.cleanChange({ op: "step", id: "o1", step: "back", amount: 200000 }, g).error, /only 150000/);
+  assert.match(c.cleanChange({ op: "step", id: "x", amount: 1 }, g).error, /no money with someone/);
+  assert.strictEqual(c.cleanChange({ op: "step", id: "o1", step: "more", amount: 200000 }, g).change.step, "more");
+  assert.deepStrictEqual(c.describeChange(st.change, { currency: "PKR", today: "2026-11-28", current: abu.data }), { verb: "Took some back", title: "With Abu", detail: "Rs 20,000 · Today · Rs 130,000 left with them" });
+  assert.deepStrictEqual(c.describeRecord("owed", { type: "loan", who: "Ali", amount: 20000, date: "2026-11-01", due: "2026-12-05", moves: [{ type: "back", amount: 5000, date: "2026-11-10" }] }, { currency: "PKR", today: "2026-11-28" }).title, "Lent to Ali");
+});
 console.log(`core: ${n} checks passed`);

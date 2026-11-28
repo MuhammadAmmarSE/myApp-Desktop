@@ -1,7 +1,7 @@
 // The editor drawer: one place where any record is added or changed, from any page (and from
 // Search, the tray and the menu). It slides in from the right and leaves the page in view.
 import { useMemo, useState } from "react";
-import { Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, PiggyBank, ArrowRightLeft, ReceiptText, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
+import { Banknote, Bell, Bookmark, Briefcase, Cake, CalendarDays, Car, CheckSquare, Clock, Gamepad2, Gift, Globe, HandCoins, Languages, Package, PiggyBank, ArrowRightLeft, ReceiptText, Server, ShoppingCart, Sparkles, Timer, UserRound, Users, Wallet, Wrench, type LucideIcon } from "lucide-react";
 import {
   addDays,
   CAR_PAPERS,
@@ -42,6 +42,7 @@ import { ChipRow, Form, FormFooter, RemindChips, Row2, TagsInput } from "./kit";
 import { ClientForm, DomainForm, ProjectForm, ServerForm, WorkLogForm } from "./WorkEditors";
 import { InterestForm, MediaForm, PracticeForm, WishForm, WordForm } from "./InterestEditors";
 import { PurchaseForm } from "./Purchase";
+import { OwedForm, OwedStepForm } from "./OwedEditors";
 import { PotForm, PotMoveForm, PotPicker, SplitEditor, splitAsNumbers, splitFromNumbers, splitOverNumbers } from "./PotEditors";
 import { autoSplit, suggestedPot, usePots } from "@/lib/pots";
 
@@ -73,6 +74,8 @@ const META: Record<EditKind, { icon: LucideIcon; add: string; edit: string; tone
   pot: { icon: PiggyBank, add: "A new pot", edit: "Edit the pot" },
   pot_move: { icon: ArrowRightLeft, add: "Move money", edit: "Move money" },
   purchase: { icon: ReceiptText, add: "Bought together", edit: "Bought together" },
+  owed: { icon: Banknote, add: "Your money with someone", edit: "Edit" },
+  owed_step: { icon: Banknote, add: "A step", edit: "A step" },
 };
 
 const undoToast = (text: string, rec: Rec) => toast.undo(text, () => useRecords.getState().restore(rec));
@@ -1342,7 +1345,17 @@ const FORMS: Record<EditKind, (p: FormProps<any>) => React.ReactElement> = {
   pot: ({ rec, close }) => <PotForm rec={rec} close={close} />,
   pot_move: ({ preset, close }) => <PotMoveForm preset={preset} close={close} />,
   purchase: ({ preset, close }) => <PurchaseForm preset={preset} close={close} />,
+  owed: ({ rec, preset, close }) => <OwedForm rec={rec} preset={preset} close={close} />,
+  owed_step: ({ preset, close }) => <OwedStepForm preset={preset} close={close} />,
 };
+
+// "Took some back from Abu" / "Ali paid back"
+function owedStepTitle(preset?: Record<string, any>) {
+  const r = preset?.id ? (useRecords.getState().byId[preset.id] as unknown as Rec<"owed"> | undefined) : undefined;
+  if (!r) return "A step";
+  const loan = r.data.type === "loan";
+  return preset?.step === "more" ? (loan ? `Lend ${r.data.who} more` : `Give ${r.data.who} more to keep`) : loan ? `${r.data.who} paid back` : `Take some back from ${r.data.who}`;
+}
 
 export function EditorHost() {
   const editing = useUI((s) => s.editing);
@@ -1365,6 +1378,10 @@ export function EditorHost() {
           ? e.rec
             ? "Edit the purchase"
             : "A purchase on the hisaab"
+          : e.kind === "owed_step"
+            ? owedStepTitle(e.preset)
+            : e.kind === "owed" && !e.rec && e.preset?.type === "loan"
+              ? "Money you lent"
           : e.kind === "pot_move"
             ? e.preset?.from === undefined
               ? `Move money into ${potName(e.preset?.to)}`

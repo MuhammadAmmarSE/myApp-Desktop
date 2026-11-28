@@ -5,11 +5,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowDownLeft, ArrowUpRight, CalendarRange, ChevronLeft, ChevronRight, Copy, Download, Filter, Gauge, HandCoins, Pencil, PiggyBank, Plus, Receipt, Repeat, Search, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
-import { fundStanding, isoDate, monthJobs, monthTotals, ownMoney, potStanding, POT_503020, POT_STARTERS, type Rec } from "@myapp/core";
+import { ArrowDownLeft, ArrowUpRight, Banknote, CalendarRange, ChevronLeft, ChevronRight, Copy, Download, Filter, Gauge, HandCoins, Pencil, PiggyBank, Plus, Receipt, Repeat, Search, Trash2, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { fundStanding, isoDate, monthJobs, monthTotals, owedLine, ownMoney, potStanding, POT_503020, POT_STARTERS, type Rec } from "@myapp/core";
 import { createPot, potVar, usePots } from "@/lib/pots";
 import { JobsBar, PotMark, PotMeter, POT_ICON } from "@/components/forms/PotEditors";
 import { moveOntoFund, useFunds } from "@/lib/funds";
+import { useOwed } from "@/lib/owed";
 import { Button, Card, CardTitle, Empty, IconButton, Input, Segmented, Stat, Tag, toast, useContextMenu } from "@/components/ui";
 import { BarList, ColumnChart, Legend, LineChart } from "@/components/charts";
 import { useList, useRecords } from "@/store/records";
@@ -36,6 +37,15 @@ export default function Money() {
   const all = useMemo(() => ownMoney(everything), [everything]);
   const funds = useFunds();
   const [showSettled, setShowSettled] = useState(false);
+  // your own money that someone else has (kept for you, or lent)
+  const owed = useOwed();
+  const [showBack, setShowBack] = useState(false);
+  const addOwed = q.get("add") === "owed" || q.get("add") === "lend" ? q.get("add") : null;
+  useEffect(() => {
+    if (!addOwed) return;
+    setQuery({ add: null });
+    edit("owed", null, { type: addOwed === "lend" ? "loan" : "keeping" });
+  }, [addOwed]);
   // opened to start a hisaab (Search: "Someone gave me money to spend")
   const addFund = q.get("add") === "fund";
   useEffect(() => {
@@ -228,6 +238,16 @@ export default function Money() {
                 {fmt(Math.abs(totals.net))}
               </div>
               <div className="relative mt-2 text-[12px] text-text3">{totals.earned ? `${Math.round((Math.max(0, totals.net) / totals.earned) * 100)}% of what came in` : "Nothing came in yet"}</div>
+              {owed.totals.total > 0 && (
+                <button
+                  type="button"
+                  onClick={() => (owed.open.length === 1 ? navigate(`/owed/${owed.open[0].rec.id}`) : document.querySelector('[data-testid="with-others"]')?.scrollIntoView({ behavior: "smooth", block: "center" }))}
+                  className="relative mt-1.5 block text-left text-[12px] text-accent-text hover:underline"
+                  data-testid="net-with-others"
+                >
+                  {withOthersLine(owed.totals.keeping, owed.totals.lent, owed.open.map((r) => r.rec.data.who), fmt)}
+                </button>
+              )}
             </Card>
           </motion.div>
           <motion.div {...rise(2)}>
@@ -508,6 +528,46 @@ export default function Money() {
               </Card>
             </motion.div>
 
+            {/* your own money that someone else has: still yours, never spending */}
+            <motion.div {...rise(6)}>
+              <Card data-testid="with-others">
+                <CardTitle
+                  title="Your money with others"
+                  icon={Banknote}
+                  sub={owed.open.length ? `${money(owed.totals.total, currency)} with ${owed.open.length === 1 ? owed.open[0].rec.data.who : `${owed.open.length} people`}` : "Kept for you, or lent: still yours"}
+                  action={
+                    owed.settled.length ? (
+                      <Button size="xs" variant="ghost" onClick={() => setShowBack(!showBack)}>
+                        {showBack ? "Hide settled" : `Settled (${owed.settled.length})`}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+                <div className="-mx-2 flex flex-col">
+                  {[...owed.open, ...(showBack ? owed.settled : [])].map(({ rec: o, left, overdue }) => (
+                    <button key={o.id} type="button" onClick={() => navigate(`/owed/${o.id}`)} className="flex items-center gap-3 rounded-[10px] px-2 py-2 text-left hover:bg-hover" data-owed={o.id}>
+                      <span className={clsx("grid h-8 w-8 shrink-0 place-items-center rounded-[9px]", o.data.closed ? "bg-surface2 text-text3 hairline" : overdue ? "bg-[color-mix(in_srgb,var(--c-warn)_15%,transparent)] text-warn" : "bg-accent-soft text-accent-text")}>
+                        {o.data.type === "loan" ? <HandCoins size={15} /> : <Banknote size={15} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px]">{o.data.type === "loan" ? `Lent to ${o.data.who}` : `With ${o.data.who}`}</span>
+                        <span className="block truncate text-[11.5px] text-text3">{[owedLine(o, currency, owed.today), o.data.notes].filter(Boolean).join(" · ")}</span>
+                      </span>
+                      {!o.data.closed && <span className={clsx("text-[13px] font-medium tnum", overdue && "text-danger")}>{money(left, o.data.currency || currency)}</span>}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <Button size="sm" variant="ghost" icon={Plus} onClick={() => edit("owed", null, { type: "keeping" })} data-testid="add-keeping">
+                    Someone has my money
+                  </Button>
+                  <Button size="sm" variant="ghost" icon={Plus} onClick={() => edit("owed", null, { type: "loan" })} data-testid="add-loan">
+                    I lent money
+                  </Button>
+                </div>
+              </Card>
+            </motion.div>
+
             {/* money someone gave you to spend: never your own, kept apart */}
             <motion.div {...rise(6)}>
               <Card data-testid="held-for-others">
@@ -627,6 +687,13 @@ export default function Money() {
 }
 
 // one pot on the Money page: what's in it, how far along, where it stands
+// "Rs 150,000 of it is with Abu" / "Rs 170,000 is with others: 150,000 kept for you, 20,000 lent"
+function withOthersLine(keeping: number, lent: number, who: string[], fmt: (n: number) => string) {
+  const people = [...new Set(who)];
+  if (people.length === 1) return `${fmt(keeping + lent)} of your money is with ${people[0]}${lent && !keeping ? " (lent)" : ""}`;
+  return `${fmt(keeping + lent)} of your money is with others: ${[keeping ? `${fmt(keeping)} kept for you` : "", lent ? `${fmt(lent)} lent` : ""].filter(Boolean).join(", ")}`;
+}
+
 function PotLine({ row, currency }: { row: ReturnType<typeof usePots>["rows"][number]; currency: string }) {
   const { pot, summary: s } = row;
   const cur = pot.data.currency || currency;

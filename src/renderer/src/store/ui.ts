@@ -28,7 +28,9 @@ export type EditKind =
   | "fund"
   | "pot"
   | "pot_move"
-  | "purchase";
+  | "purchase"
+  | "owed"
+  | "owed_step";
 export type Editing = { kind: EditKind; rec?: Rec | null; preset?: Record<string, any>; n: number };
 
 type UI = {

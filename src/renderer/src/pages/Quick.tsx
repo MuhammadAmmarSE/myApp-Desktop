@@ -34,6 +34,7 @@ export default function Quick() {
   const currency = ctx?.currency || "PKR";
   const funds = useMemo(() => ctx?.funds || [], [ctx]);
   const pots = useMemo(() => ctx?.pots || [], [ctx]);
+  const owed = useMemo(() => ctx?.owed || [], [ctx]);
   // the split is made by the main window, which has the records: here it can only say there is one
   const rules = useMemo(() => (pots.some((p) => p.rule) ? () => true as const : () => []), [pots]);
 
@@ -89,7 +90,7 @@ export default function Quick() {
     setPhase("thinking");
     setError("");
     try {
-      const r = await sortOut(t, { currency, people, funds, pots });
+      const r = await sortOut(t, { currency, people, funds, pots, owed });
       setActions(r.actions);
       setKeep(r.actions.map(() => true));
       setReply(r.reply);
@@ -118,6 +119,7 @@ export default function Quick() {
         },
         addMore: (fund_id, move) => drafts.push({ kind: "fund_more", data: { fund_id, move } }),
         addPotMove: (pot_id, move) => drafts.push({ kind: "pot_move", data: { pot_id, move } }),
+        addOwedMove: (owed_id, move) => drafts.push({ kind: "owed_move", data: { owed_id, move } }),
       },
     );
     if (!drafts.length) return;
@@ -226,7 +228,7 @@ export default function Quick() {
                     {reply && <p className="selectable rounded-[11px] bg-accent-soft/60 px-3 py-2 text-[13px]">{reply}</p>}
                     {summary && actions.length > 0 && <div className="px-1 text-[12px] text-text2">{summary}</div>}
                     {actions.map((a, i) => {
-                      const d = describe(a, currency, whoseOf(actions, keep, funds), potNameOf(actions, keep, pots), rules);
+                      const d = describe(a, currency, whoseOf(actions, keep, funds), potNameOf(actions, keep, pots), rules, owed);
                       const Icon = ACTION_ICON[a.type];
                       const on = keep[i];
                       return (

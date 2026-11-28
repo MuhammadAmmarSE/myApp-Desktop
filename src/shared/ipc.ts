@@ -99,11 +99,14 @@ export interface QuickContext {
   funds: { id: string; from: string; purpose: string; left: number }[];
   // your pots (rule: income is split into it by a rule); an older main window sends none
   pots?: { id: string; name: string; type: "spend" | "bills" | "save" | "debt"; balance: number; rule?: boolean }[];
+  // your money with someone (kept for you or lent), still open; an older main window sends none
+  owed?: { id: string; who: string; type: "keeping" | "loan"; left: number }[];
 }
 
 // a record for the main window to make. ref: a stand-in id other drafts in the same batch may point
 // at (fund_id, paid_from, pot_id, a split's pots); kind "fund_more" adds money to a hisaab you have:
-// data { fund_id, move }; kind "pot_move" moves money between pots: data { pot_id, move }
+// data { fund_id, move }; kind "pot_move" moves money between pots: data { pot_id, move }; kind
+// "owed_move" is a step on your money with someone: data { owed_id, move }
 export type Draft = { kind: string; data: any; ref?: string };
 
 // a command from the tray, the menu, a notification or the quick window, for the main window

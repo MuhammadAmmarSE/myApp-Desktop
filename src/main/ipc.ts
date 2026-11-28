@@ -288,6 +288,12 @@ export function registerIpc() {
               .slice(0, 30)
               .map((p) => ({ id: p.id.slice(0, 64), name: String(p.name || "").slice(0, 60), type: ["spend", "bills", "save", "debt"].includes(p.type) ? p.type : "spend", balance: Number(p.balance) || 0, rule: !!p.rule }))
           : [],
+        owed: Array.isArray(ctx.owed)
+          ? ctx.owed
+              .filter((o) => o && typeof o.id === "string")
+              .slice(0, 20)
+              .map((o) => ({ id: o.id.slice(0, 64), who: String(o.who || "").slice(0, 60), type: o.type === "loan" ? ("loan" as const) : ("keeping" as const), left: Number(o.left) || 0 }))
+          : [],
       };
   });
   // the quick window doesn't keep records: what it saves is made by the main window

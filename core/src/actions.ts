@@ -3,7 +3,7 @@
 // apps clean it again before saving, so a bad answer can never write a bad record.
 
 import { isValidDate, isValidTime, toEpoch } from "./dates";
-import { EXPENSE_CATEGORIES, FundMove, INCOME_CATEGORIES, Kind, KindData, PotData, PotMove, PotRule, PotSplit, PotType, Relation, RELATIONS } from "./kinds";
+import { EXPENSE_CATEGORIES, FundMove, INCOME_CATEGORIES, Kind, KindData, OwedMove, PotData, PotMove, PotRule, PotSplit, PotType, Relation, RELATIONS } from "./kinds";
 import { potMoveFor } from "./pots";
 
 // from_fund on an item or an expense: bought with money someone gave you; "new" = the money given
@@ -23,10 +23,14 @@ export type Action =
   | { type: "fund"; from: string; amount: number; purpose: string; date: string; note?: string; adds_to?: string }
   // a new pot for your own money, and money moved between pots
   | { type: "pot"; name: string; pot_type: PotType; target?: number | null; target_date?: string | null; rule?: PotRule | null; opening?: number | null }
-  | { type: "pot_move"; from: string | null; to: string | null; amount: number; date: string; note?: string };
+  | { type: "pot_move"; from: string | null; to: string | null; amount: number; date: string; note?: string }
+  // your own money with someone: kept for you or lent (owed), and a step on one you have
+  // (owed_move: took some back / paid back, or gave / lent more); owed is its id
+  | { type: "owed"; owed_type: "keeping" | "loan"; who: string; amount: number; date: string; due?: string | null; account?: "cash" | "bank" | "card" | "wallet"; note?: string }
+  | { type: "owed_move"; owed: string; move: "back" | "more"; amount: number; date: string; note?: string };
 
 export type ActionType = Action["type"];
-export const ACTION_TYPES: ActionType[] = ["todo", "item", "event", "reminder", "money", "note", "clip", "date", "fund", "pot", "pot_move"];
+export const ACTION_TYPES: ActionType[] = ["todo", "item", "event", "reminder", "money", "note", "clip", "date", "fund", "pot", "pot_move", "owed", "owed_move"];
 
 // Where each action lands, in words the screens use.
 export const ACTION_AREA: Record<ActionType, string> = {
@@ -41,6 +45,8 @@ export const ACTION_AREA: Record<ActionType, string> = {
   fund: "Hisaab",
   pot: "Pots",
   pot_move: "Pots",
+  owed: "With others",
+  owed_move: "With others",
 };
 
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -67,11 +73,12 @@ const category = (v: unknown, type: "expense" | "income") => {
 };
 
 // ctx.funds: the ids of the hisaabs still open, the only ones an action may point at; ctx.pots:
-// the ids of your pots
+// the ids of your pots; ctx.owed: the ids of your money with others (kept or lent), still open
 export interface CaptureCtx {
   today: string;
   funds?: string[];
   pots?: string[];
+  owed?: string[];
 }
 const fundRef = (v: unknown, ctx: CaptureCtx) => {
   const s = str(v, 64);
@@ -210,6 +217,23 @@ export function cleanAction(raw: any, ctx: CaptureCtx): Action | null {
       if (from === undefined || to === undefined || from === to || !(amount > 0)) return null;
       return { type, from, to, amount, date: date(raw.date) || ctx.today, note: str(raw.note, 200) || undefined };
     }
+    case "owed": {
+      const amount = amountOf(raw.amount);
+      const who = str(raw.who ?? raw.person ?? raw.to, 80);
+      if (!who || !(amount > 0)) return null;
+      const owed_type = oneOf(raw.owed_type ?? raw.kind, ["keeping", "loan"] as const, "keeping");
+      const o: Extract<Action, { type: "owed" }> = { type, owed_type, who, amount, date: date(raw.date) || ctx.today, note: str(raw.note, 300) || undefined };
+      if (owed_type === "loan") o.due = date(raw.due);
+      const account = oneOf(raw.account, ["cash", "bank", "card", "wallet", ""] as const, "");
+      if (account) o.account = account;
+      return o;
+    }
+    case "owed_move": {
+      const owed = str(raw.owed ?? raw.id, 64);
+      const amount = amountOf(raw.amount);
+      if (!owed || !(ctx.owed || []).includes(owed) || !(amount > 0)) return null;
+      return { type, owed, move: oneOf(raw.move, ["back", "more"] as const, "back"), amount, date: date(raw.date) || ctx.today, note: str(raw.note, 200) || undefined };
+    }
     default:
       return null;
   }
@@ -238,6 +262,9 @@ export function cleanActions(raw: unknown, ctx: CaptureCtx, max = 20): Action[] 
   }
   return list;
 }
+
+// the step an owed_move action adds to the money with someone it names
+export const owedMoveOf = (a: Extract<Action, { type: "owed_move" }>): OwedMove => Object.assign({ type: a.move, amount: a.amount, date: a.date }, a.note ? { note: a.note } : {});
 
 // the move a "they gave more" action adds to the hisaab it names
 export const fundMoveOf = (a: Extract<Action, { type: "fund" }>): FundMove => ({ type: "more", amount: a.amount, date: a.date, note: a.note });
@@ -304,6 +331,20 @@ export function actionToRecords(a: Action, ctx: { currency: string; people: Pers
     }
     case "pot_move":
       return [];
+    case "owed": {
+      const person = findPerson(ctx.people, a.who);
+      return [
+        {
+          kind: "owed",
+          data: Object.assign(
+            { type: a.owed_type, who: a.who, person_id: person ? person.id : null, amount: a.amount, currency: ctx.currency, date: a.date, account: a.account || ("cash" as const), due: a.owed_type === "loan" ? a.due ?? null : null, moves: [], closed: false },
+            a.note ? { notes: a.note } : {},
+          ),
+        },
+      ];
+    }
+    case "owed_move":
+      return [];
   }
 }
 
@@ -320,6 +361,7 @@ export function saveActions(
     create: (kind: Kind, data: KindData[Kind]) => string;
     addMore: (fundId: string, move: FundMove) => void;
     addPotMove?: (potId: string, move: PotMove) => void;
+    addOwedMove?: (owedId: string, move: OwedMove) => void;
     autoSplit?: (amount: number, date: string) => PotSplit[];
     potColor?: number;
   },
@@ -342,6 +384,10 @@ export function saveActions(
     if (a.type === "pot") continue;
     if (a.type === "fund") {
       if (a.adds_to) ctx.addMore(a.adds_to, fundMoveOf(a));
+      continue;
+    }
+    if (a.type === "owed_move") {
+      if (ctx.addOwedMove) ctx.addOwedMove(a.owed, owedMoveOf(a));
       continue;
     }
     if (a.type === "pot_move") {

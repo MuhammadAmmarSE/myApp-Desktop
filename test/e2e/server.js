@@ -167,6 +167,18 @@ function captureTurn(body) {
       ],
     };
   }
+  // "lent Ali 20000 and took 10000 from Abu": a loan, and a step on the money Abu keeps (its id is
+  // in what the app sent)
+  if (/lent \w+ \d+/i.test(text)) {
+    const sys = String((body.messages && body.messages[0] && body.messages[0].content) || "");
+    const lent = text.match(/lent (\w+) (\d+)/i);
+    const took = text.match(/took (\d+) from (\w+)/i);
+    const owedId = (who) => (sys.match(new RegExp(`id ([\\w-]+) = ${who} keeps`)) || [])[1];
+    return {
+      summary: "A loan, and some of your money back.",
+      actions: [{ type: "owed", owed_type: "loan", who: lent[1], amount: Number(lent[2]), date: day(0) }].concat(took ? [{ type: "owed_move", owed: owedId(took[2]), move: "back", amount: Number(took[1]), date: day(0) }] : []),
+    };
+  }
   if (/various load/i.test(text)) return { summary: "What you paid.", actions: [{ type: "money", money_type: "expense", amount: 30000, category: "Other", note: "Paid to various load", date: day(0) }] };
   return {
     summary: "Two things to buy today, a reminder and what you paid.",

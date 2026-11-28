@@ -29,6 +29,7 @@ export const KINDS = [
   "memory",
   "fund",
   "pot",
+  "owed",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (k: unknown): k is Kind => typeof k === "string" && (KINDS as readonly string[]).includes(k);
@@ -391,6 +392,37 @@ export interface PotData {
   [k: string]: unknown;
 }
 
+// Your own money with someone else: kept with them ("Abu has 150,000 of mine; I take from it when
+// I need it") or lent to them ("Ali borrowed 20,000; he'll pay it back"). It's still yours, so it
+// is never your spending and the month's totals don't change: Money shows how much of your money
+// is with others. Only forgiving what's left of a loan becomes spending (an expense in Money).
+export type OwedType = "keeping" | "loan";
+export type OwedMoveType = "more" | "back" | "forgave";
+export interface OwedMove {
+  id?: string; // to take one back exactly
+  type: OwedMoveType; // more: you gave them more; back: you took some / they paid some back; forgave: you let the rest go
+  amount: number;
+  date: string; // YYYY-MM-DD
+  account?: MoneyData["account"]; // where it went from, or came back to
+  note?: string;
+  money_id?: string | null; // forgave: the expense in Money
+}
+export interface OwedData {
+  type: OwedType;
+  who: string; // as you call them: "Abu"
+  person_id?: string | null;
+  amount: number; // what you gave them first
+  currency?: string;
+  date: string; // YYYY-MM-DD, when they got it
+  account?: MoneyData["account"]; // where it came from
+  due?: string | null; // a loan: when they said they'd pay it back
+  notes?: string;
+  moves?: OwedMove[];
+  closed?: boolean; // all of it back (or let go)
+  closed_on?: string | null;
+  [k: string]: unknown;
+}
+
 export interface KindData {
   todo: TodoData;
   item: ItemData;
@@ -417,6 +449,7 @@ export interface KindData {
   memory: MemoryData;
   fund: FundData;
   pot: PotData;
+  owed: OwedData;
 }
 
 export interface Rec<K extends Kind = Kind> {

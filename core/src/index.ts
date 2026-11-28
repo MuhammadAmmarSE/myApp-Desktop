@@ -15,6 +15,7 @@ export * from "./operator";
 export * from "./assist";
 export * from "./guide";
 export * from "./funds";
+export * from "./owed";
 export * from "./pots";
 export * from "./voice";
 export * from "./purchase";

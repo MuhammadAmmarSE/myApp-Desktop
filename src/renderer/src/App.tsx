@@ -6,6 +6,7 @@ import { actionToRecords, isKind } from "@myapp/core";
 import { talk } from "@/lib/talk";
 import { addMove, useFunds } from "@/lib/funds";
 import { autoSplit, createPot, movePot, usePots } from "@/lib/pots";
+import { owedStep, useOwed } from "@/lib/owed";
 import type { Command } from "@shared/ipc";
 import { useApplyTheme } from "@/theme";
 import { page as pageMotion } from "@/theme/motion";
@@ -47,6 +48,7 @@ const Work = lazy(() => import("@/pages/Work"));
 const WorkProject = lazy(() => import("@/pages/WorkProject"));
 const Fund = lazy(() => import("@/pages/Fund"));
 const Pot = lazy(() => import("@/pages/Pot"));
+const Owed = lazy(() => import("@/pages/Owed"));
 const Interests = lazy(() => import("@/pages/Interests"));
 const Assistant = lazy(() => import("@/pages/Assistant"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -64,6 +66,7 @@ const ROUTES: [string, ComponentType<{ params: Record<string, string> }>][] = [
   ["/money", Money],
   ["/funds/:id", Fund],
   ["/pots/:id", Pot],
+  ["/owed/:id", Owed],
   ["/people", People],
   ["/car", CarPage],
   ["/things", Things],
@@ -131,6 +134,12 @@ function handleCommand(cmd: Command) {
         n++;
         continue;
       }
+      if (d.kind === "owed_move") {
+        const m = d.data.move || {};
+        if (typeof d.data.owed_id === "string" && (m.type === "back" || m.type === "more") && Number(m.amount) > 0) owedStep(d.data.owed_id, m.type, Number(m.amount), { date: m.date, note: m.note });
+        n++;
+        continue;
+      }
       if (d.kind === "pot_move") {
         const m = d.data.move || {};
         const pot = real(d.data.pot_id);
@@ -168,6 +177,7 @@ function ShellEffects() {
   const people = useRecords((s) => s.lists.person);
   const openFunds = useFunds().open;
   const potRows = usePots().rows;
+  const owedRows = useOwed().open;
   useEffect(() => {
     startSync();
     startAlerts();
@@ -182,8 +192,9 @@ function ShellEffects() {
       people: people.map((p) => ({ id: p.id, name: p.data.name, relation: p.data.relation })),
       funds: openFunds.map((r) => ({ id: r.fund.id, from: r.fund.data.from, purpose: r.fund.data.purpose, left: r.summary.left })),
       pots: potRows.map((r) => ({ id: r.pot.id, name: r.pot.data.name, type: r.pot.data.type, balance: r.summary.balance, rule: !!r.pot.data.rule })),
+      owed: owedRows.slice(0, 20).map((r) => ({ id: r.rec.id, who: r.rec.data.who, type: r.rec.data.type, left: r.left })),
     });
-  }, [currency, themeId, motion, people, openFunds, potRows]);
+  }, [currency, themeId, motion, people, openFunds, potRows, owedRows]);
   // late to-dos on the dock / taskbar
   const late = badges.overdue.tone === "danger" ? badges.overdue.n : 0;
   useEffect(() => bridge.badge(late), [late]);

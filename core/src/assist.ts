@@ -6,7 +6,8 @@
 import { cleanRule, cleanTags } from "./actions";
 import { isoDate, isoTime, isValidDate, isValidTime, toEpoch } from "./dates";
 import { dayWord, money, monthDay, time12 } from "./format";
-import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES, type ItemData, type MoneyData } from "./kinds";
+import { CAR_PAPERS, EXPENSE_CATEGORIES, INCOME_CATEGORIES, isKind, Kind, MAX_RECORD_BYTES, MEDIA_STATUSES, MEDIA_TYPES, PROJECT_STATUSES, RELATIONS, THING_CATEGORIES, type ItemData, type MoneyData, type OwedData } from "./kinds";
+import { owedSummary } from "./owed";
 import { POT_TYPE_META, POT_TYPES, cleanSplit, potMoveFor, ruleWords, splitTotal } from "./pots";
 import { itemsNote, sharedFund } from "./purchase";
 import type { SearchDoc } from "./search";
@@ -191,6 +192,13 @@ export const KIND_SPECS: Record<Kind, KindSpec> = {
     fields: { name: "text", type: one(POT_TYPES), target: "num", target_date: "date", rule: "rule", opening: "num", currency: "currency", archived: "bool", notes: "long", order: int(0, 999) },
     required: ["name"],
   },
+  // their own money with someone: kept with them (keeping) or lent (loan). Taking some back, being
+  // paid back, giving more or letting the rest go is the change op "owed"
+  owed: {
+    label: "Money with someone",
+    fields: { type: one(["keeping", "loan"]), who: "text", person_id: ref("person"), amount: "num", currency: "currency", date: "date", account: one(["cash", "bank", "card", "wallet"]), due: "date", notes: "long" },
+    required: ["who", "amount"],
+  },
 };
 
 // the fields of every kind in words, for the AI's tool description
@@ -319,7 +327,9 @@ export type Change =
   // money moved between pots (from / to null = money not in a pot); kept on one pot record
   | { op: "move"; kind: "pot"; from: string | null; to: string | null; amount: number; date: string; note?: string; title: string }
   // several list items bought together for one price: one expense, every item pointing at it
-  | { op: "buy"; kind: "item"; ids: string[]; amount: number; date: string; account: NonNullable<MoneyData["account"]>; fund: string | null; pot_id?: string | null; note?: string; title: string };
+  | { op: "buy"; kind: "item"; ids: string[]; amount: number; date: string; account: NonNullable<MoneyData["account"]>; fund: string | null; pot_id?: string | null; note?: string; title: string }
+  // a step on your money with someone: took some back / they paid back (back), or gave / lent more
+  | { op: "step"; kind: "owed"; id: string; step: "back" | "more"; amount: number; date: string; note?: string; title: string };
 
 // a money record's pot fields made sense of: only your own money goes in pots, only spending comes
 // out of one, only income is split, and a split is never more than the income
@@ -476,13 +486,28 @@ export function cleanChange(raw: any, ctx: { today: string; get: (id: string) =>
     if (note) change.note = note;
     return { change, ignored: [] };
   }
+  if (op === "step") {
+    const id = typeof raw.id === "string" ? raw.id.trim() : "";
+    const found = id ? ctx.get(id) : null;
+    if (!found || found.kind !== "owed") return { error: "there's no money with someone with that id (find it first)" };
+    const d = found.data as OwedData;
+    const step: "back" | "more" = raw.step === "more" || raw.move === "more" ? "more" : "back";
+    const amount = Math.round(num(raw.amount) * 100) / 100;
+    if (!(amount > 0 && amount <= 1e12)) return { error: "a step needs an amount above 0" };
+    const left = owedSummary({ data: d }).left;
+    if (step === "back" && !(left > 0)) return { error: `nothing of theirs is left with ${d.who}` };
+    if (step === "back" && amount > left) return { error: `${d.who} has only ${left} left; ask whether they meant that` };
+    const date = isValidDate(raw.date) ? (raw.date as string) : ctx.today;
+    const note = oneLine(raw.note, 200) || undefined;
+    return { change: Object.assign({ op: "step" as const, kind: "owed" as const, id, step, amount, date, title: describeRecord("owed", d).title }, note ? { note } : {}), ignored: [] };
+  }
   if (op === "remove" || op === "delete") {
     const id = typeof raw.id === "string" ? raw.id.trim() : "";
     const found = id ? ctx.get(id) : null;
     if (!found) return { error: "there's no record with that id (find it first)" };
     return { change: { op: "remove", id, kind: found.kind, title: describeRecord(found.kind, found.data).title }, ignored: [] };
   }
-  return { error: "op is create, update, remove, move or buy" };
+  return { error: "op is create, update, remove, move, buy or step" };
 }
 
 // A new record's data from a clean create: what the app's own forms would fill in. ctx.potColor:
@@ -532,6 +557,8 @@ export function newRecordData(change: Extract<Change, { op: "create" }>, ctx: { 
       return Object.assign({ purpose: "Shopping", currency: ctx.currency, date: ctx.today, moves: [], closed: false }, d);
     case "pot":
       return Object.assign({ type: "spend", currency: ctx.currency, moves: [], archived: false }, typeof ctx.potColor === "number" ? { color: ctx.potColor } : {}, d);
+    case "owed":
+      return Object.assign({ type: "keeping", currency: ctx.currency, date: ctx.today, account: "cash", moves: [], closed: false }, d);
     default:
       return d;
   }
@@ -644,6 +671,12 @@ export function describeRecord(kind: Kind, d: any, opts: { currency?: string; to
       return { title: d.text || "Memory", detail: d.topic ? `About ${d.topic}` : "Remembered" };
     case "fund":
       return { title: `${d.purpose || "Money"} · from ${d.from || "someone"}`, detail: join([`Gave you ${money(Number(d.amount) || 0, cur)}`, day(d.date), d.closed ? "Settled" : ""]) };
+    case "owed": {
+      const loan = d.type === "loan";
+      const s = owedSummary({ data: d });
+      const left = d.closed || !(s.left > 0) ? "Settled" : s.left < s.given ? `${money(s.left, cur)} still with them` : "";
+      return { title: loan ? `Lent to ${d.who || "someone"}` : `With ${d.who || "someone"}`, detail: join([`${loan ? "Lent" : "Kept for you"} ${money(Number(d.amount) || 0, cur)}`, day(d.date), loan && d.due && left !== "Settled" ? `back by ${day(d.due)}` : "", left]) };
+    }
     case "pot": {
       const meta = POT_TYPE_META[d.type as keyof typeof POT_TYPE_META] || POT_TYPE_META.spend;
       return {
@@ -674,6 +707,13 @@ export function recordDoc(rec: { id: string; kind: Kind; data: any }): SearchDoc
 export function describeChange(change: Change, opts: { currency?: string; today?: string; current?: any; fundName?: string } = {}): { verb: string; title: string; detail: string } {
   const label = KIND_SPECS[change.kind]?.label || change.kind;
   if (change.op === "move") return { verb: "Move money", title: change.title, detail: join([money(change.amount, opts.currency || "PKR"), dayWord(change.date, opts.today || isoDate()), change.note]) };
+  if (change.op === "step") {
+    const cur = opts.currency || "PKR";
+    const loan = opts.current && opts.current.type === "loan";
+    const verb = change.step === "more" ? (loan ? "Lent more" : "Gave more to keep") : loan ? "Paid back" : "Took some back";
+    const after = opts.current ? Math.max(0, owedSummary({ data: opts.current }).left + (change.step === "more" ? change.amount : -change.amount)) : null;
+    return { verb, title: change.title, detail: join([money(change.amount, cur), dayWord(change.date, opts.today || isoDate()), after != null ? `${money(after, opts.current.currency || cur)} left with them` : "", change.note]) };
+  }
   if (change.op === "buy") {
     const whose = change.fund ? (opts.fundName ? `from ${opts.fundName}` : "from money given to you") : change.account !== "cash" ? `paid by ${change.account}` : "";
     return { verb: "Bought together", title: change.title, detail: join([`${change.ids.length} items for ${money(change.amount, opts.currency || "PKR")}`, whose, dayWord(change.date, opts.today || isoDate()), change.note]) };
