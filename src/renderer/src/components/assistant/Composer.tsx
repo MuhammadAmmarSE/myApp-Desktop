@@ -3,11 +3,13 @@
 // files (a PDF, a Word or Excel file, anything) by dropping them or the paperclip. Or talk: the
 // microphone (or the talk shortcut) listens until you go quiet and it goes out at once (straight to
 // the assistant as a recording, where the page takes it: onVoice), unless "Let me check first" is
-// on: then what you said waits in the box.
+// on: then what you said waits in the box. With a draftKey, what's in the box (words, photos,
+// files) is kept for that chat until it's sent: leave the page and it's there when you come back.
+// Click a photo to see it large and edit it (crop, turn, draw) before it goes.
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowUp, FileText, ImagePlus, Paperclip, X } from "lucide-react";
+import { ArrowUp, FileText, ImagePlus, Paperclip, PenLine, X } from "lucide-react";
 import { IconButton, Kbd, Spin, toast } from "@/components/ui";
 import { MAX_PHOTOS, photosFromFiles, shrinkDataUrl, type Photo } from "@/lib/images";
 import { bridge } from "@/lib/bridge";
@@ -17,6 +19,8 @@ import { useSettings } from "@/store/settings";
 import { useListen, type SendRecording } from "@/lib/listen";
 import { useTalkKeys, useTalkTarget } from "@/lib/talk";
 import { MicButton, MicLevel } from "./Voice";
+import { PhotoEditor } from "./PhotoEditor";
+import { useDrafts } from "@/store/drafts";
 
 // autoListen: start listening as soon as it's shown (the talk shortcut opened it). listenNow: a
 // new value listens again, quietly (your reply, after an answer was read aloud).
@@ -30,6 +34,7 @@ export function Composer({
   autoListen,
   listenNow,
   onVoice,
+  draftKey,
 }: {
   placeholder: string;
   onSend: (text: string, photos: Photo[], files: Attachment[], byVoice: boolean) => Promise<boolean | void> | void;
@@ -40,17 +45,24 @@ export function Composer({
   autoListen?: boolean;
   listenNow?: number;
   onVoice?: SendRecording;
+  draftKey?: string; // keep what's written here for this chat until it's sent
 }) {
-  const [text, setText] = useState(initial || "");
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [files, setFiles] = useState<Attachment[]>([]);
+  const [saved] = useState(() => (draftKey ? useDrafts.getState().get(draftKey) : null));
+  const [text, setText] = useState(initial || saved?.text || "");
+  const [photos, setPhotos] = useState<Photo[]>(saved?.photos || []);
+  const [files, setFiles] = useState<Attachment[]>(saved?.files || []);
+  const [editing, setEditing] = useState<Photo | null>(null);
   // an older server ignores files: they're offered only when it says it takes them
   const filesOk = useOperator((s) => !!s.status?.features?.includes("files"));
   const [reading, setReading] = useState(false);
   const [over, setOver] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const autoSend = useSettings((s) => s.voiceAutoSend);
-  const [spoken, setSpoken] = useState(false); // what's in the box came from the microphone
+  const [spoken, setSpoken] = useState(saved?.spoken || false); // what's in the box came from the microphone
+  // kept for this chat as it changes (an empty box forgets it)
+  useEffect(() => {
+    if (draftKey) useDrafts.getState().set(draftKey, { text, photos, files, spoken });
+  }, [draftKey, text, photos, files, spoken]);
   const voice = useListen(
     (said) => {
       // "send right away": what you said goes as it is (with anything already in the box)
@@ -136,6 +148,8 @@ export function Composer({
     if ((!t && !photos.length && !files.length) || busy || reading || voice.listening) return;
     const r = await onSend(t, photos, files, byVoice);
     if (r !== false) {
+      // sent: this chat's box starts empty next time (sending can take you to another page first)
+      if (draftKey) useDrafts.getState().clear(draftKey);
       setText("");
       setSpoken(false);
       setPhotos([]);
@@ -197,7 +211,12 @@ export function Composer({
               <div className="flex gap-2 px-3 pt-3">
                 {photos.map((p, i) => (
                   <div key={p.id} className="group relative">
-                    <img src={p.uri} alt={p.name || `Photo ${i + 1}`} className="h-16 w-16 rounded-[10px] object-cover hairline" />
+                    <button type="button" onClick={() => setEditing(p)} aria-label={`See and edit ${p.name || `photo ${i + 1}`}`} title="See it large, crop, turn or draw on it" className="relative block overflow-hidden rounded-[10px]" data-testid="attached-photo">
+                      <img src={p.uri} alt={p.name || `Photo ${i + 1}`} className="h-16 w-16 rounded-[10px] object-cover hairline transition-transform duration-200 group-hover:scale-[1.04]" />
+                      <span className="absolute inset-0 grid place-items-center rounded-[10px] bg-[color-mix(in_srgb,var(--c-bg)_45%,transparent)] text-text opacity-0 transition-opacity group-hover:opacity-100">
+                        <PenLine size={16} />
+                      </span>
+                    </button>
                     <button
                       type="button"
                       aria-label="Remove the photo"
@@ -306,6 +325,18 @@ export function Composer({
           <span className="ml-auto">Paste photos, or drop photos and files</span>
         </div>
       </div>
+      <AnimatePresence>
+        {editing && (
+          <PhotoEditor
+            key={editing.id}
+            src={editing.data}
+            name={editing.name}
+            editable
+            onClose={() => setEditing(null)}
+            onSave={(next) => setPhotos((ps) => ps.map((x) => (x.id === editing.id ? next : x)))}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence initial={false}>
         {voice.error && (
           <motion.p key="voice-error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-2 text-center text-[12.5px] text-warn" role="alert" data-testid="voice-error">

@@ -33,7 +33,7 @@ export function ClaudeReportCard({ report }: { report: ClaudeReport }) {
         </span>
         <Tag tone={TONE[report.status]}>{reportStatusWords(report.status)}</Tag>
       </div>
-      <p className="selectable whitespace-pre-wrap text-[13.5px] text-text">{report.summary}</p>
+      <p className="selectable whitespace-pre-wrap [overflow-wrap:anywhere] text-[13.5px] text-text">{report.summary}</p>
       {(report.sessionUrl || report.pullRequest) && (
         <div className="flex flex-wrap gap-2">
           {report.sessionUrl && (
