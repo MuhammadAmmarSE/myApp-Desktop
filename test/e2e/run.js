@@ -886,6 +886,43 @@ async function scenario(name, fn, always = false) {
     if (await win.getByTestId("voice-error").count()) throw new Error(`an error: ${await win.getByTestId("voice-error").innerText()}`);
   });
 
+  await scenario("talking to Capture: read back in its own words, a spoken change made by the AI, and a yes saves it", async () => {
+    const log = path.join(workdir, "voice.log");
+    if (fs.existsSync(log)) fs.unlinkSync(log);
+    fs.writeFileSync(path.join(workdir, "says.txt"), ["doodh aur anday", "aur chai bhi", "haan ji"].join("\n"));
+    await go("/capture");
+    await win.getByTestId("mic").first().click();
+    await until("the words in the box", async () => (await win.getByLabel("What to capture").inputValue()) === "doodh aur anday", 25000);
+    await win.getByTestId("sort-out").click();
+    await win.getByTestId("review").getByText("Doodh aur anday aaj ki list mein.").waitFor({ timeout: 20000 });
+    await until("read back with a question", async () => fs.existsSync(log) && /^speak \S+ Doodh aur anday, aaj ki list mein\. Save kar doon\?/m.test(fs.readFileSync(log, "utf8")), 20000);
+    // read to its end, it listens; "aur chai bhi" is a change, and the AI makes it
+    await win.getByTestId("answer-listening").waitFor({ timeout: 20000 });
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "capture-answer-listening.png") });
+    await until("tea added", async () => (await win.getByTestId("review").locator("input").evaluateAll((els) => els.map((e) => e.value))).includes("Chai"), 30000);
+    if (process.env.E2E_SHOTS) await win.screenshot({ path: path.join(OUT, "capture-changed.png") });
+    // "haan ji": saved, and it says so in your words
+    await until("the three on the server", async () => (await live("item")).filter((r) => ["Doodh", "Anday", "Chai"].includes(r.data.name)).length === 3, 30000);
+    await until("said done", async () => /^speak \S+ Ho gaya\./m.test(fs.readFileSync(log, "utf8")), 15000);
+    if (fs.readFileSync(path.join(workdir, "says.txt"), "utf8").trim()) throw new Error("not everything said was heard");
+  });
+
+  await scenario("talking to the assistant: its card saved by saying yes, the yes kept out of the chat", async () => {
+    const before = (await live("todo")).filter((r) => r.data.title === "Call Jamie").length;
+    const log = path.join(workdir, "voice.log");
+    if (fs.existsSync(log)) fs.unlinkSync(log);
+    fs.writeFileSync(path.join(workdir, "says.txt"), ["What's my brother's name? Add his shoe size 42 and remind me to call him", "yes"].join("\n"));
+    await go("/assistant");
+    await win.getByTestId("chat-list").waitFor();
+    const box = win.getByTestId("composer-box");
+    await box.getByTestId("mic").click();
+    await win.getByTestId("timeline").getByText("Your brother is Jamie.", { exact: false }).waitFor({ timeout: 40000 });
+    // read aloud, then it listens: "yes" saves the card
+    await until("the to-do saved", async () => (await live("todo")).filter((r) => r.data.title === "Call Jamie").length === before + 1, 40000);
+    await until("said saved", async () => /^speak \S+ Saved\.$/m.test(fs.readFileSync(log, "utf8")), 15000);
+    if ((await win.locator("[data-user-message]").count()) !== 1) throw new Error("the yes went into the chat");
+  });
+
   await scenario("talking: the talk shortcut opens the assistant listening, and stops it; Edit keeps what you said", async () => {
     await go("/todos");
     const registered = await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Alt+Space"));

@@ -728,4 +728,9 @@ ok("pots: capture actions and the assistant's changes", () => {
   assert.strictEqual(c.describeRecord("money", recs.m1.data).detail.includes("1 pot got Rs 200,000"), true);
   assert.ok(c.guideFor("pots").features.some((f) => f.id === "pots"));
 });
+ok("a spoken yes or no to 'shall I save it?', in English, Roman Urdu and Urdu; anything more is a change", () => {
+  for (const y of ["Yes", "yes.", "OK save it", "go ahead", "haan", "Haan ji", "ji haan, save kar do", "theek hai", "save kar do na", "bilkul", "ہاں", "جی ہاں ٹھیک ہے", "yes yes", "ok please"]) assert.strictEqual(c.spokenAnswer(y), "yes", y);
+  for (const x of ["No", "no no", "cancel", "nahi", "Nahin, rehne do", "mat karo", "نہیں", "don't save", "never mind"]) assert.strictEqual(c.spokenAnswer(x), "no", x);
+  for (const m of ["make it thirty thousand", "haan but not the bread", "nahi, 30 hazaar thi", "and eggs too", "", "yes and add milk to the list for tomorrow please", "what is the time"]) assert.strictEqual(c.spokenAnswer(m), null, m);
+});
 console.log(`core: ${n} checks passed`);

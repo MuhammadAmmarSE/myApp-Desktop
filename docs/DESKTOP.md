@@ -202,6 +202,17 @@ screen starts listening, or stops if it is (`talk.ts` keeps the newest box that 
 with none on screen the assistant opens a new chat already listening (`/assistant?voice=1`). The
 two global shortcuts can't share keys.
 
+## Saying yes, no, or what to change
+
+The same spoken loop as the phone's (myApp's docs/ARCHITECTURE.md → The spoken loop). Something
+said in Capture goes out with `context.spoken: true`; the answer's `speak` is read aloud and,
+once read to its end, Capture listens for your answer (`data-testid="answer-listening"`): core's
+`spokenAnswer` makes "yes" / "haan ji" a save and "no" / "nahi" a no, and anything else goes back
+to the server as a change (`revise`), made by the AI and read back (at most three in a row). The
+microphone beside Save takes a change by voice on any capture. In the assistant, a spoken yes or
+no right after a card saves or skips its open changes (`lib/proposals.ts` `decide`, as a click
+would; a deletion still needs a click) and isn't sent as a message.
+
 ## Reading aloud (`lib/speech.ts`)
 
 When an answer is to be read (see Talking), it is read in your ElevenLabs voice when your server has an

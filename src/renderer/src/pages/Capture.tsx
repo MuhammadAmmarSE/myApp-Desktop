@@ -5,8 +5,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
-import { ArrowRight, Bot, Check, CornerDownLeft, History, NotebookPen, PencilLine, RotateCcw, Sparkles, Undo2, X } from "lucide-react";
-import { actionToRecords, nextPotColor, saveActions, type Action, type PersonRef } from "@myapp/core";
+import { ArrowRight, Bot, Check, CornerDownLeft, History, Mic, NotebookPen, PencilLine, RotateCcw, Sparkles, Undo2, X } from "lucide-react";
+import { actionToRecords, nextPotColor, saveActions, spokenAnswer, type Action, type PersonRef } from "@myapp/core";
 import { Button, Card, CardTitle, Chip, Empty, IconButton, Kbd, Page, Textarea, toast } from "@/components/ui";
 import { Orb, type OrbState } from "@/components/orb/Orb";
 import { useList, useRecords } from "@/store/records";
@@ -24,11 +24,14 @@ import { layerOpen } from "@/lib/layers";
 import { ago } from "@/lib/format";
 import { ease, rise } from "@/theme/motion";
 import { useListen } from "@/lib/listen";
+import { speak, useSpeaking } from "@/lib/speech";
 import { MicButton, MicLevel } from "@/components/assistant/Voice";
 
 type Phase = "input" | "thinking" | "review" | "saved" | "error";
 type Past = { text: string; at: number };
 const EDITABLE: EditKind[] = ["todo", "item", "event", "reminder", "money", "clip", "date"];
+// spoken changes to one capture ("make it 30,000"), at most this many in a row
+const MAX_CHANGES = 3;
 const HISTORY_KEY = "captures";
 
 const readHistory = (raw: string | undefined): Past[] => {
@@ -76,11 +79,16 @@ export default function Capture() {
     typed.current = setTimeout(() => setWriting(false), 2500);
   };
   useEffect(() => () => void (typed.current && clearTimeout(typed.current)), []);
-  // or say it: what your server writes down goes in the box, after anything already there
-  const voice = useListen((said) => {
-    setText((t) => (t.trim() ? `${t.trim()} ${said}` : said));
-    box.current?.focus();
-  });
+  // or say it: what your server writes down goes in the box, after anything already there. Once
+  // what it would save is shown (and read back to you, when you said it), what you say is your
+  // answer: yes saves it, no doesn't, anything else is a change to it that the AI makes
+  const spoken = useRef(false);
+  const awaitingAnswer = useRef(false);
+  const doneLine = useRef("");
+  const changes = useRef(0);
+  const [revising, setRevising] = useState("");
+  const voice = useListen((said) => heard.current(said));
+  const heard = useRef<(said: string) => void>(() => {});
   useEffect(() => {
     if (!voice.listening) return;
     const onKey = (e: KeyboardEvent) => {
@@ -101,25 +109,81 @@ export default function Capture() {
   }, [actions, keep, funds, pots, currency]);
   const reviewing = phase === "review" || phase === "saved";
 
+  // what came back: shown, and read aloud when you said it
+  const shown = (r: Awaited<ReturnType<typeof sortOut>>) => {
+    setActions(r.actions);
+    setKeep(r.actions.map(() => true));
+    setMoved(r.actions.map(() => false));
+    setResult({ summary: r.summary, reply: r.reply, assistant: r.assistant });
+    setPhase("review");
+    if (!spoken.current || !useSettings.getState().speakReplies) return;
+    const line = r.speak || r.reply || r.summary;
+    if (!line) return;
+    doneLine.current = r.speak_done || "";
+    awaitingAnswer.current = r.actions.length > 0 && !r.assistant && changes.current < MAX_CHANGES;
+    speak(line);
+  };
+
   const ask = async (input = text.trim()) => {
     if (!input || phase === "thinking") return;
     asked.current = input;
+    changes.current = 0;
     setPhase("thinking");
     setError(null);
     useRecords.getState().setMeta(HISTORY_KEY, JSON.stringify(remember(history.map((h) => h.text), input).map((t) => ({ text: t, at: t === input ? Date.now() : history.find((h) => h.text === t)?.at || Date.now() }))));
     try {
-      const r = await sortOut(input, { currency, people, funds, pots });
-      setActions(r.actions);
-      setKeep(r.actions.map(() => true));
-      setMoved(r.actions.map(() => false));
-      setResult({ summary: r.summary, reply: r.reply, assistant: r.assistant });
-      setPhase("review");
+      shown(await sortOut(input, { currency, people, funds, pots, spoken: spoken.current }));
     } catch (e) {
       const err = e as ApiError;
       setError({ message: err.message || "Couldn't sort that out.", code: err.code });
       setPhase("error");
     }
   };
+
+  // a spoken change to what's shown ("make it 30,000", "not the bread")
+  const revise = async (said: string) => {
+    const input = (asked.current || text).trim();
+    if (!input) return;
+    changes.current += 1;
+    setRevising(said);
+    try {
+      const kept = actions.filter((_, i) => keep[i] && !moved[i]);
+      shown(await sortOut(input, { currency, people, funds, pots, spoken: true }, { actions: kept, correction: said }));
+    } catch (e) {
+      toast.error((e as ApiError).message || "Couldn't change it.");
+    } finally {
+      setRevising("");
+    }
+  };
+
+  heard.current = (said: string) => {
+    if (phase !== "review") {
+      spoken.current = true;
+      setText((t) => (t.trim() ? `${t.trim()} ${said}` : said));
+      box.current?.focus();
+      return;
+    }
+    // an answer by voice is answered by voice
+    spoken.current = true;
+    const a = spokenAnswer(said);
+    if (a === "yes") return saveAll();
+    if (a === "no") return void toast("Not saved. Change it, or save it when it's right.");
+    void revise(said);
+  };
+
+  // once what it would save has been read to its end, listen for your answer
+  const turnRef = useRef({ phase, count: actions.length, start: voice.start });
+  turnRef.current = { phase, count: actions.length, start: voice.start };
+  useEffect(
+    () =>
+      useSpeaking.subscribe((st, prev) => {
+        if (st.finished === prev.finished || !awaitingAnswer.current) return;
+        awaitingAnswer.current = false;
+        const t = turnRef.current;
+        if (t.phase === "review" && t.count && useSettings.getState().voiceFollowUp) void t.start();
+      }),
+    [],
+  );
 
   // opened with words already (Today's box, Search, a redline:// link): go straight away
   useEffect(() => {
@@ -129,6 +193,9 @@ export default function Capture() {
   }, []);
 
   const reset = (keepText = true) => {
+    spoken.current = false;
+    awaitingAnswer.current = false;
+    if (voice.listening) voice.cancel();
     setPhase("input");
     setActions([]);
     setKeep([]);
@@ -159,6 +226,7 @@ export default function Capture() {
     const done = n && fromNotes.length ? doneWithNotes(fromNotes, created) : null;
     if (done?.removed) toast(`${n === 1 ? "Saved" : `Saved ${n} things`}, and the note${done.removed === 1 ? " is" : "s are"} done`, { action: { label: "Undo", run: done.undo } });
     else toast.success(n === 1 ? "Saved" : `Saved ${n} things`);
+    if (spoken.current && useSettings.getState().speakReplies) speak(doneLine.current || "Saved.");
     setTimeout(() => {
       setText("");
       reset(false);
@@ -364,6 +432,18 @@ export default function Capture() {
                     {result.summary && <p className="mt-0.5 text-[13.5px] text-text2">{result.summary}</p>}
                   </motion.div>
                 )}
+                {phase === "review" && (voice.listening || voice.writing) && (
+                  <button type="button" onClick={() => voice.stop()} className="flex items-center gap-2.5 rounded-[12px] bg-accent-soft px-3.5 py-2.5 text-left text-[12.5px] text-accent-text" data-testid="answer-listening">
+                    {voice.listening ? <MicLevel level={voice.level} /> : <Mic size={15} />}
+                    <span className="min-w-0 flex-1">{voice.writing ? "Writing down what you said…" : "Listening: say yes to save it, no, or what to change"}</span>
+                  </button>
+                )}
+                {revising && (
+                  <div className="flex items-center gap-2.5 rounded-[12px] px-3.5 py-2.5 text-[12.5px] text-text2 glass hairline" data-testid="revising">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                    Changing it: “{revising}”
+                  </div>
+                )}
                 {actions.map((a, i) => {
                   const d = cards[i];
                   const Icon = ACTION_ICON[a.type];
@@ -413,8 +493,9 @@ export default function Capture() {
                   );
                 })}
                 <motion.div {...rise(actions.length + 2)} className="mt-1 flex flex-wrap items-center gap-2">
+                  {actions.length > 0 && phase === "review" && !revising && <MicButton state={voice.state} onClick={voice.toggle} size={40} />}
                   {actions.length > 0 ? (
-                    <Button variant="primary" size="lg" icon={phase === "saved" ? Check : CornerDownLeft} onClick={saveAll} disabled={!chosen || phase === "saved"} kbd={phase === "saved" ? undefined : `${modKey()}↵`} data-testid="save-all">
+                    <Button variant="primary" size="lg" icon={phase === "saved" ? Check : CornerDownLeft} onClick={saveAll} disabled={!chosen || phase === "saved" || !!revising} kbd={phase === "saved" ? undefined : `${modKey()}↵`} data-testid="save-all">
                       {phase === "saved" ? "Saved" : chosen === actions.length ? `Save ${chosen === 1 ? "it" : `all ${chosen}`}` : `Save ${chosen}`}
                     </Button>
                   ) : result.assistant ? (

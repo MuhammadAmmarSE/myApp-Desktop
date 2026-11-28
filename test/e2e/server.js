@@ -128,6 +128,17 @@ function captureTurn(body) {
   const user = (body.messages || []).filter((m) => m.role === "user").pop();
   const text = String((user && user.content) || "");
   if (/what can you do/i.test(text)) return { summary: "", reply: "I keep your to-dos, lists, plans, money and dates.", assistant: false, actions: [] };
+  // "doodh aur anday", said out loud: read back with a question; "aur chai bhi" said about it adds tea
+  const sys = String((body.messages && body.messages[0] && body.messages[0].content) || "");
+  if (/They said this out loud/.test(sys) && /doodh aur anday/i.test(text)) {
+    const tea = /aur chai bhi/.test(text);
+    return {
+      summary: tea ? "Doodh, anday aur chai aaj ki list mein." : "Doodh aur anday aaj ki list mein.",
+      speak: tea ? "Doodh, anday aur chai, aaj ki list mein. Save kar doon?" : "Doodh aur anday, aaj ki list mein. Save kar doon?",
+      speak_done: "Ho gaya.",
+      actions: ["Doodh", "Anday"].concat(tea ? ["Chai"] : []).map((name) => ({ type: "item", name, list: "grocery", mode: "store", today: true })),
+    };
+  }
   // "Mother gave me 5000 for groceries: atta and eggs": her money, with what to buy with it
   const given = text.match(/(\w+) gave me (\d+) for (\w+)(?::\s*(.+))?/i);
   if (given)
@@ -200,7 +211,17 @@ const eleven = http.createServer((req, res) => {
       const body = Buffer.concat(chunks);
       const type = (/Content-Type: (audio\/[\w.+-]+)/.exec(body.toString("latin1")) || [])[1] || "?";
       fs.appendFileSync(path.join(work, "voice.log"), `listen ${type} ${body.length}\n`);
-      return json({ text: "Read me something short", language_code: "eng", audio_duration_secs: 2.4 });
+      // a scenario can say what's "heard" next, one line each time (says.txt in the work folder)
+      const says = path.join(work, "says.txt");
+      let text = "Read me something short";
+      if (fs.existsSync(says)) {
+        const lines = fs.readFileSync(says, "utf8").split("\n").filter(Boolean);
+        if (lines.length) {
+          text = lines.shift();
+          fs.writeFileSync(says, lines.join("\n"));
+        }
+      }
+      return json({ text, language_code: "eng", audio_duration_secs: 2.4 });
     }
     const m = /^\/v1\/text-to-speech\/([^/?]+)/.exec(req.url);
     if (m) {

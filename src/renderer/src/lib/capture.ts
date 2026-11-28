@@ -97,17 +97,26 @@ export function describe(
   }
 }
 
-export type CaptureResult = { summary: string; reply: string; assistant: boolean; actions: Action[] };
+// speak / speak_done: when you said it, a line to read aloud (ending with "shall I save it?") and
+// what to say once it's saved, both in your language
+export type CaptureResult = { summary: string; reply: string; assistant: boolean; actions: Action[]; speak?: string; speak_done?: string };
 
-export async function sortOut(text: string, ctx: { currency: string; people: PersonRef[]; funds?: OpenFund[]; pots?: OpenPot[] }): Promise<CaptureResult> {
+// revise: what was proposed for this text and what you said about it ("make it 30,000"): the whole
+// result comes back with the change made
+export async function sortOut(
+  text: string,
+  ctx: { currency: string; people: PersonRef[]; funds?: OpenFund[]; pots?: OpenPot[]; spoken?: boolean },
+  revise?: { actions: Action[]; correction: string },
+): Promise<CaptureResult> {
   const funds = (ctx.funds || []).slice(0, 20);
   const pots = (ctx.pots || []).slice(0, 30);
   const now = new Date();
-  const r = await api<{ summary?: string; reply?: string; assistant?: boolean; actions?: Action[] }>(
+  const r = await api<{ summary?: string; reply?: string; assistant?: boolean; actions?: Action[]; speak?: string; speak_done?: string }>(
     "POST",
     "/ai/capture",
     {
       text,
+      revise,
       context: {
         today: isoDate(now),
         time: isoTime(now),
@@ -116,6 +125,7 @@ export async function sortOut(text: string, ctx: { currency: string; people: Per
         people: ctx.people.map((p) => ({ name: p.name, relation: p.relation })),
         funds,
         pots: pots.map((p) => ({ id: p.id, name: p.name, type: p.type, balance: p.balance })),
+        spoken: ctx.spoken === true,
       },
     },
     { timeoutMs: 60000 },
@@ -125,6 +135,8 @@ export async function sortOut(text: string, ctx: { currency: string; people: Per
     summary: typeof r.summary === "string" ? r.summary : "",
     reply: typeof r.reply === "string" ? r.reply.trim() : "",
     assistant: r.assistant === true,
+    speak: typeof r.speak === "string" ? r.speak : undefined,
+    speak_done: typeof r.speak_done === "string" ? r.speak_done : undefined,
   };
 }
 

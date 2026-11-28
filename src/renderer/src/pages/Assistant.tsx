@@ -7,7 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import clsx from "clsx";
 import { Archive, ArchiveRestore, ArrowDown, Bot, CircleAlert, CircleCheck, CircleStop, MessageSquarePlus, MoreHorizontal, Pencil, Search, Server, Settings2, Star, Trash2, Volume2, VolumeX } from "lucide-react";
-import { buildTimeline, type OpEvent } from "@myapp/core";
+import { buildTimeline, spokenAnswer, type OpEvent } from "@myapp/core";
+import { decide, decisionsOf, useProposals } from "@/lib/proposals";
 import { Button, Card, Chip, confirmDialog, Empty, IconButton, Input, Menu, Segmented, Skeleton, SkeletonRows, Tag, toast, useContextMenu, Working } from "@/components/ui";
 import { Orb } from "@/components/orb/Orb";
 import { StepCard } from "@/components/assistant/Steps";
@@ -244,7 +245,7 @@ function Home() {
   const start = async (text: string, photos: Photo[], files: Attachment[], byVoice = false) => {
     setSending(true);
     try {
-      const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), files: filesOf(files), context: requestContext() }, { timeoutMs: timeoutFor(photos, files) });
+      const r = await api<{ run: Run }>("POST", "/operator/runs", { text, images: imagesOf(photos), files: filesOf(files), context: { ...requestContext(), spoken: byVoice } }, { timeoutMs: timeoutFor(photos, files) });
       useOperator.getState().loadRuns();
       // said, not typed: its answer is read aloud there, and then it listens for your reply
       navigate(`/assistant/${r.run.id}${byVoice ? "?spoken=1" : ""}`);
@@ -481,10 +482,42 @@ function Conversation({ runId }: { runId: number }) {
     [],
   );
 
+  // changes it proposed since your last message that you haven't saved or skipped
+  const openProposal = () => {
+    const pending = useProposals.getState().pending;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind === "user") break;
+      if (it.kind === "step" && it.proposal) {
+        const d = decisionsOf(runId, it.proposal, pending);
+        const open = it.proposal.changes.map((_, j) => j).filter((j) => !d[j]);
+        if (open.length) return { p: it.proposal, open };
+      }
+    }
+    return null;
+  };
+
   const send = async (text: string, photos: Photo[], files: Attachment[], byVoice = false) => {
+    // a spoken yes or no to "shall I save it?": saves or skips the card, as clicking would (a
+    // deletion still needs a click). Anything more goes to the assistant as usual.
+    const card = byVoice && !photos.length && !files.length ? openProposal() : null;
+    const answer = card ? spokenAnswer(text) : null;
+    if (card && answer) {
+      if (answer === "yes") {
+        const removals = card.open.filter((j) => card.p.changes[j].op === "remove");
+        const r = decide(runId, card.p, card.open.filter((j) => card.p.changes[j].op !== "remove"), []);
+        if (r.saved) toast.success(r.saved === 1 ? "Saved" : `Saved ${r.saved} changes`, { action: { label: "Undo", run: r.undo } });
+        if (reading) speak(removals.length ? (r.saved ? "Saved. Deleting needs a click on the card." : "Deleting needs a click on the card.") : r.failed.length ? "Some of it couldn't be saved: have a look at the card." : "Saved.");
+      } else {
+        decide(runId, card.p, [], card.open);
+        toast("Left as it was");
+        if (reading) speak("Okay, I left it.");
+      }
+      return true;
+    }
     setSending(true);
     try {
-      const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), files: filesOf(files), context: requestContext() }, { timeoutMs: timeoutFor(photos, files) });
+      const r = await api<{ steering: boolean }>("POST", `/operator/runs/${runId}/messages`, { text, images: imagesOf(photos), files: filesOf(files), context: { ...requestContext(), spoken: byVoice } }, { timeoutMs: timeoutFor(photos, files) });
       since.current = events.length ? events[events.length - 1].id : 0;
       setVoiced(byVoice);
       setAtEnd(true);
